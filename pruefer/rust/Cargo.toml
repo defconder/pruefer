@@ -1,0 +1,21 @@
+[package]
+name = "defconder-pruefer"
+version = "0.3.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Dritte, unabhaengige Umsetzung des Defconder-Pruefers"
+
+[dependencies]
+sha2 = "0.10"
+ed25519-dalek = "2"
+base64 = "0.22"
+serde_json = { version = "1", features = ["preserve_order"] }
+hex = "0.4"
+
+[lib]
+name = "pruefer"
+path = "src/lib.rs"
+
+[[bin]]
+name = "pruefen_vektoren"
+path = "src/bin/pruefen_vektoren.rs"

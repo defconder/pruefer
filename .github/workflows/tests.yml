@@ -1,0 +1,49 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  javascript:
+    name: JavaScript (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [20, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Testvektoren
+        run: node pruefer/testvektoren/pruefen.mjs
+      - name: Seite neu bauen und mit der eingecheckten vergleichen
+        run: |
+          node pruefer/bauen-html.mjs
+          git diff --exit-code pruefer/pruefer.html
+
+  python:
+    name: Python
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install cryptography
+      - name: Testvektoren
+        run: python pruefer/python/pruefen_vektoren.py
+
+  rust:
+    name: Rust
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Testvektoren
+        run: cargo run --release --locked --manifest-path pruefer/rust/Cargo.toml -- pruefer/testvektoren/testvektoren.json

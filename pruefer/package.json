@@ -1,0 +1,19 @@
+{
+  "name": "defconder-pruefer",
+  "version": "0.3.0",
+  "description": "Offener Prüfer für manipulationssichere Beweispakete, Aussagen über das Protokoll, Entscheidungsnachweise und Prüfpunkte. Keine Abhängigkeiten.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "private": false,
+  "bin": {
+    "defconder-pruefer": "pruefer.mjs"
+  },
+  "scripts": {
+    "bauen": "node bauen-html.mjs",
+    "test": "node testvektoren/pruefen.mjs && python python/pruefen_vektoren.py && cargo run --release --manifest-path rust/Cargo.toml -- testvektoren/testvektoren.json",
+    "release": "node release.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
