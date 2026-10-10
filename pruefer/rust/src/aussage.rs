@@ -4,13 +4,41 @@ use crate::note::{base64_streng, notiz_lesen, pruefpunkt_lesen, schluessel_lesen
 use serde_json::Value;
 use std::collections::HashMap;
 
-const INDEXREGELN: &str = "indexregeln-1";
+pub const INDEXREGELN: &str = "indexregeln-1";
+pub const INDEXREGELN_2: &str = "indexregeln-2";
 const INDEXZEILE: &str = "defconder-index-1";
+const INDEXZEILE_2: &str = "defconder-index-2";
+const MAX_ZEIT_MS: i64 = 253_402_300_799_999;
 const SCHLUESSELFELDER: [&str; 18] = ["id", "recordId", "userId", "actorId", "createdBy", "executedBy", "publishedBy", "deletedBy", "uploadedBy", "approvedBy", "sha256", "assetId", "entityTypeId", "actionTypeId", "objectId", "username", "purposeId", "apiKeyId"];
 const NULL32: [u8; 32] = [0; 32];
 const EINS32: [u8; 32] = [255; 32];
 
-pub fn schluessel_von(ereignis: &Value) -> Vec<String> {
+fn ganzzahl(v: &Value) -> Option<i64> {
+    if let Some(i) = v.as_i64() {
+        return Some(i);
+    }
+    let f = v.as_f64()?;
+    (f.fract() == 0.0 && f.abs() < 9.0e15).then_some(f as i64)
+}
+
+pub fn monat_von(ereignis: &Value) -> Option<String> {
+    let at = ganzzahl(ereignis.get("at")?)?;
+    if !(0..=MAX_ZEIT_MS).contains(&at) {
+        return None;
+    }
+    let tage = (at / 1000) / 86400;
+    let z = tage + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let monat = if mp < 10 { mp + 3 } else { mp - 9 };
+    let jahr = yoe + era * 400 + if monat <= 2 { 1 } else { 0 };
+    Some(format!("{:04}-{:02}", jahr, monat))
+}
+
+pub fn schluessel_von(ereignis: &Value, regeln: &str) -> Vec<String> {
     let mut menge: Vec<String> = Vec::new();
     let typ = ereignis.get("type").and_then(Value::as_str);
     if let Some(t) = typ {
@@ -28,11 +56,23 @@ pub fn schluessel_von(ereignis: &Value) -> Vec<String> {
             }
         }
     }
+    if regeln == INDEXREGELN_2 {
+        if let Some(monat) = monat_von(ereignis) {
+            let basis = menge.clone();
+            let mut neu = vec![format!("monat={}", monat)];
+            neu.extend(basis.iter().map(|k| format!("{}|monat={}", k, monat)));
+            for s in neu {
+                if !menge.contains(&s) {
+                    menge.push(s);
+                }
+            }
+        }
+    }
     menge
 }
 
-fn schluessel_hash(schluessel: &str) -> [u8; 32] {
-    sha256(format!("{}\n{}", INDEXREGELN, schluessel).as_bytes())
+fn schluessel_hash(schluessel: &str, regeln: &str) -> [u8; 32] {
+    sha256(format!("{}\n{}", regeln, schluessel).as_bytes())
 }
 
 fn kette_plus(kette: &[u8; 32], ereignis_hash_hex: &str) -> [u8; 32] {
@@ -48,17 +88,17 @@ fn blatt_daten(key_hash: &[u8; 32], anzahl: u64, kette: &[u8; 32]) -> Vec<u8> {
     roh
 }
 
-pub fn index_aufbauen(ereignisse: &[Value]) -> (String, usize) {
+pub fn index_aufbauen(ereignisse: &[Value], regeln: &str) -> (String, usize) {
     let mut tabelle: HashMap<String, (u64, [u8; 32])> = HashMap::new();
     for e in ereignisse {
         let hash = e.get("hash").and_then(Value::as_str).unwrap_or("");
-        for s in schluessel_von(e) {
+        for s in schluessel_von(e, regeln) {
             let eintrag = tabelle.entry(s).or_insert((0, NULL32));
             eintrag.1 = kette_plus(&eintrag.1, hash);
             eintrag.0 += 1;
         }
     }
-    let mut zeilen: Vec<([u8; 32], u64, [u8; 32])> = tabelle.iter().map(|(s, (a, k))| (schluessel_hash(s), *a, *k)).collect();
+    let mut zeilen: Vec<([u8; 32], u64, [u8; 32])> = tabelle.iter().map(|(s, (a, k))| (schluessel_hash(s, regeln), *a, *k)).collect();
     zeilen.push((NULL32, 0, NULL32));
     zeilen.push((EINS32, 0, NULL32));
     zeilen.sort_by(|a, b| a.0.cmp(&b.0));
@@ -66,8 +106,8 @@ pub fn index_aufbauen(ereignisse: &[Value]) -> (String, usize) {
     (hex::encode(wurzel(&blaetter)), zeilen.len())
 }
 
-fn index_zeile_lesen(erweiterungen: &[String]) -> Option<(u64, String)> {
-    let zeilen: Vec<&String> = erweiterungen.iter().filter(|z| z.starts_with(&format!("{} ", INDEXZEILE))).collect();
+fn index_zeile_lesen(erweiterungen: &[String]) -> Option<(u64, String, &'static str)> {
+    let zeilen: Vec<&String> = erweiterungen.iter().filter(|z| z.starts_with(&format!("{} ", INDEXZEILE)) || z.starts_with(&format!("{} ", INDEXZEILE_2))).collect();
     if zeilen.len() != 1 {
         return None;
     }
@@ -80,7 +120,8 @@ fn index_zeile_lesen(erweiterungen: &[String]) -> Option<(u64, String)> {
     if anzahl < 2 || wurzel_bytes.len() != 32 {
         return None;
     }
-    Some((anzahl, hex::encode(wurzel_bytes)))
+    let regeln = if zeilen[0].starts_with(&format!("{} ", INDEXZEILE_2)) { INDEXREGELN_2 } else { INDEXREGELN };
+    Some((anzahl, hex::encode(wurzel_bytes), regeln))
 }
 
 fn ist_hex64(text: &Value) -> Option<&str> {
@@ -118,7 +159,8 @@ pub fn aussage_pruefen(doc: &Value, log_schluessel: &str, zeugen: &[String], sch
 }
 
 fn aussage_intern(doc: &Value, log_schluessel: &str, zeugen: &[String], schwelle: usize) -> Option<Aussageergebnis> {
-    if doc.get("schema")?.as_str()? != "defconder-aussage-1" || doc.get("regeln")?.as_str()? != INDEXREGELN {
+    let regeln = doc.get("regeln")?.as_str()?;
+    if doc.get("schema")?.as_str()? != "defconder-aussage-1" || (regeln != INDEXREGELN && regeln != INDEXREGELN_2) {
         return None;
     }
     let notiz = notiz_lesen(doc.get("notiz")?.as_str()?).ok()?;
@@ -130,12 +172,15 @@ fn aussage_intern(doc: &Value, log_schluessel: &str, zeugen: &[String], schwelle
     }
     let zeugen_schluessel: Vec<_> = zeugen.iter().map(|z| schluessel_lesen(z)).collect::<Result<_, _>>().ok()?;
     let zeugen_sig = signaturen_pruefen(&notiz, &zeugen_schluessel);
-    let (index_anzahl, index_wurzel) = index_zeile_lesen(&punkt.erweiterungen)?;
+    let (index_anzahl, index_wurzel, index_regeln) = index_zeile_lesen(&punkt.erweiterungen)?;
+    if index_regeln != regeln {
+        return None;
+    }
     let mut alle = true;
     let mut anzahlen = Vec::new();
     for a in doc.get("aussagen")?.as_array()? {
         let schluessel = a.get("schluessel")?.as_str()?;
-        let k = hex::encode(schluessel_hash(schluessel));
+        let k = hex::encode(schluessel_hash(schluessel, regeln));
         match a.get("art")?.as_str()? {
             "vorhanden" => {
                 let anzahl = a.get("anzahl")?.as_u64()?;

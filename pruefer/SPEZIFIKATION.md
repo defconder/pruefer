@@ -1,6 +1,6 @@
 # Spezifikation der Formate und Prüfschritte
 
-Fassung 0.3. Diese Seite beschreibt genau, was der Prüfer rechnet, damit jemand ihn in einer anderen Sprache nachbauen kann. Drei Umsetzungen (JavaScript, Python, Rust) bestehen dieselben Testvektoren in `testvektoren/`. Englische Fassung: [SPECIFICATION.en.md](SPECIFICATION.en.md).
+Fassung 0.4. Diese Seite beschreibt genau, was der Prüfer rechnet, damit jemand ihn in einer anderen Sprache nachbauen kann. Drei Umsetzungen (JavaScript, Python, Rust) bestehen dieselben Testvektoren in `testvektoren/`. Englische Fassung: [SPECIFICATION.en.md](SPECIFICATION.en.md).
 
 Begriffe: Ein Hex-Wert ist Kleinbuchstaben, ohne Präfix. `||` ist Verkettung. `SHA-256` rechnet über Bytes. Zeichenfolgen sind UTF-8.
 
@@ -93,7 +93,7 @@ U+2014 U+0020 <name> U+0020 <Base64( Kennung(4 Byte) || Signatur )>\n
 ```
 
 - Jede Signaturzeile beginnt mit dem Gedankenstrich U+2014 und einem Leerzeichen.
-- Schlüsselkennung `= SHA-256( Name || 0x0A || Typ || Schlüssel )[:4]`. Typ `0x01` ist eine Ed25519-Signatur des Protokolls über den Text. Typ `0x04` ist die Gegenzeichnung eines Zeugen.
+- Schlüsselkennung `= SHA-256( Name || 0x0A || Typ || Schlüssel )[:4]`. Typ `0x01` ist eine Ed25519-Signatur des Protokolls über den Text. Typ `0x04` ist die Gegenzeichnung eines Zeugen. Typ `0xFF` mit einer Verfahrenskennung ist eine hashbasierte Signatur (Abschnitt 13).
 - Gegenzeichnung (cosignature/v1): die Signatur ist `Zeit (8 Byte, big-endian) || Ed25519( "cosignature/v1\ntime <Zeit dezimal>\n" || Text )`.
 - Ein Schlüssel wird als `Name+Kennung(hex)+Base64(Typ || 32 Byte)` ausgetauscht.
 - Base64 muss kanonisch sein. Signaturen unbekannter Schlüssel werden ignoriert. Besteht die Signatur eines bekannten Schlüssels nicht, lehnt der Prüfer den ganzen Prüfpunkt ab.
@@ -102,6 +102,7 @@ Erweiterungszeilen sind Teil des signierten Texts, die Zeugen zeichnen sie mit. 
 
 ```
 defconder-index-1 <Zahl der Indexeinträge dezimal> <Indexwurzel Base64>
+defconder-index-2 <Zahl der Indexeinträge dezimal> <Indexwurzel Base64>
 defconder-zeitanker-1 bitcoin <Blockkopf, 160 Zeichen Hex>
 ```
 
@@ -199,3 +200,124 @@ Der alte Schlüssel signiert `kanonisch({ schema, von, nach, at, entzieht })`. D
 ```
 
 `a` und `b` sind Prüfpunkte. Bewiesen ist ein Widerspruch, wenn beide die gültige Signatur des Protokolls tragen, dieselbe Baumgröße haben und verschiedene Wurzeln. Das ist ein Beweis, den jeder nachrechnen kann. Eine Rücksetzung oder ein fehlender Konsistenzbeweis ist dagegen kein kryptografischer Beweis, der Beobachter meldet sie als Alarm mit Beweisstücken.
+
+
+## 13. Hashbasierte Signatur (SLH-DSA)
+
+Ein Protokoll kann seinen Prüfpunkt zusätzlich mit einem hashbasierten Verfahren nach FIPS 205 unterschreiben. Das Verfahren rechnet nur mit SHA-256 und bleibt auch gegenüber einem Quantencomputer sicher, solange SHA-256 hält. Unterstützt sind SLH-DSA-SHA2-128s (Signatur 7856 Byte) und SLH-DSA-SHA2-128f (17088 Byte). Verwendet wird die äußere Form mit Kontextzeichenfolge (`slh_sign`, `slh_verify`), nicht die vorgehashte.
+
+Schlüssel: `Name+Kennung+Base64( 0xFF || Verfahrenskennung || 0x00 || öffentlicher Schlüssel )`. Die Verfahrenskennung ist die ASCII-Zeichenfolge `defconder-slh-dsa-sha2-128s-1` oder `defconder-slh-dsa-sha2-128f-1`, der öffentliche Schlüssel hat 32 Byte (PK.seed || PK.root). Das Typbyte `0xFF` steht nach c2sp.org/signed-note für Typen ohne eigenes Typbyte. Die Kennung ist `SHA-256( Name || 0x0A || 0xFF || Verfahrenskennung || 0x00 || Schlüssel )[:4]`.
+
+Signaturzeile: wie in Abschnitt 5, mit der Signatur als Wert. Signiert wird der Text des Prüfpunkts (alle Bytes bis einschließlich des Zeilenumbruchs vor der Leerzeile) mit der Kontextzeichenfolge `defconder-pruefpunkt-1`. Die Zeile trägt den Namen des Protokolls und steht hinter den Gegenzeichnungen der Zeugen, die sie nie sehen. Eine Gegenzeichnung durch Zeugen mit hashbasiertem Verfahren gibt es nicht. C2SP kennt für Gegenzeichnungen den Typ `0x06` mit ML-DSA-44, diesen Typ prüft der Prüfer nicht.
+
+Wer einen hashbasierten Schlüssel des Protokolls festlegt, verlangt genau eine gültige Signatur dieses Schlüssels. Sie fehlt oder ist ungültig: der Prüfpunkt besteht nicht. Ohne festgelegten Schlüssel wird die Zeile ignoriert wie jede Signatur eines unbekannten Schlüssels.
+
+## 14. Zeitbeweis `defconder-zeitbeweis-1`
+
+Beweist, dass ein Prüfpunkt spätestens zu einer Bitcoin-Blockzeit bestand. Er ergänzt die Untergrenze des Zeitankers (Abschnitt 10) um eine Obergrenze.
+
+```
+{ schema, notiz, logSchluessel?, ots: Base64(Datei im Format von OpenTimestamps), koepfe: { "<Höhe>": <Blockkopf, 160 Zeichen Hex> } }
+```
+
+Gestempelt wird `SHA-256` über den Text des Prüfpunkts wie in Abschnitt 13. Die Datei `ots` beginnt mit den 31 Byte `00 "OpenTimestamps" 00 00 "Proof" 00 BF 89 E2 E8 84 E8 92 94`, dann Hauptversion 1 (Längenzahl nach LEB128), das Byte `08` (SHA-256), 32 Byte Prüfsumme und der Baum der Schritte. Ein Knoten liest ein Byte. `FF` kündigt einen weiteren Zweig an und das nächste Byte benennt dessen Art. `00` ist eine Bestätigung: 8 Byte Art, dann Nutzlast mit vorangestellter Länge. Alle anderen Bytes sind Operationen auf der laufenden Nachricht:
+
+| Byte | Operation |
+|---|---|
+| `08` | SHA-256 |
+| `03` | RIPEMD-160 |
+| `F0` | anfügen (Argument mit Längenzahl, mindestens 1 Byte) |
+| `F1` | voranstellen (ebenso) |
+| `F2` | Bytes umkehren |
+| `F3` | als kleingeschriebene Hexzeichen ausschreiben |
+
+SHA-1 (`02`) und Keccak-256 (`67`) lehnt der Prüfer ab. Nach der Operation folgt der Teilbaum für das Ergebnis. Bestätigungsarten: `05 88 96 0D 73 D7 19 01` ist Bitcoin (Nutzlast die Blockhöhe als Längenzahl, nichts weiter), `83 DF E3 0D 2E F9 0C 8E` ist ausstehend, andere Arten werden ignoriert. Grenzen: Datei höchstens 1000000 Byte, Nachricht höchstens 4096 Byte, Tiefe höchstens 256, Knoten höchstens 20000, Längenzahlen höchstens 5 Byte, keine Bytes nach dem Baum.
+
+Bei einer Bitcoin-Bestätigung muss die Nachricht am Ende des Pfads gleich den Bytes 36 bis 67 des Blockkopfs zur Höhe sein. Der Kopf muss seinen Zielwert erfüllen und die Mindestarbeit tragen (Abschnitt 10). Der Prüfer rechnet vorsichtig mit der Blockzeit plus zwei Stunden als spätestem Zeitpunkt. Nennt der Prüfpunkt einen Zeitanker, müssen Untergrenze und Obergrenze zusammenpassen.
+
+## 15. Stichprobe `defconder-stichprobe-1`
+
+Zieht aus dem Protokoll Ereignisse mit einem Zufall, den der Betreiber beim Festschreiben nicht kannte, und gibt aus fehlerfreien Ziehungen eine Schranke für den Anteil verletzender Ereignisse an.
+
+```
+{ schema, notiz, logSchluessel?, regel: { anzahl, abstand, konfidenz, pruefungen: [ "kette", "index", "entscheidung" ] },
+  zeitbeweis: { ots, koepfe }, zufall: { koepfe: [ Blockkopf ] }, proben: [ Probe ] }
+```
+
+`zeitbeweis` bestätigt den Prüfpunkt (Abschnitt 14) in einem Block der Höhe `h`. `zufall.koepfe` sind genau `abstand` Blockköpfe der Höhen `h+1` bis `h+abstand`, jeder mit gültiger Arbeit und dem Vorgänger im Feld `prev` des Kopfs. Der Zufall ist die Blockprüfsumme des letzten Kopfs in der üblichen Schreibweise (mit führenden Nullen) als 32 Byte.
+
+```
+saat = SHA-256( "defconder-stichprobe-1" || 0x00 || Wurzel des Prüfpunkts (32) || Zufall (32) || Baumgröße (8, big-endian) || anzahl (8, big-endian) )
+Ziehung z = 0, 1, 2, ...: w = erste 8 Byte von SHA-256( saat || z (8, big-endian) ) als Zahl ohne Vorzeichen
+                          grenze = floor( 2^64 / Baumgröße ) * Baumgröße
+                          ist w >= grenze, wird z übersprungen, sonst ist w mod Baumgröße die nächste Ziehung
+```
+
+Es gibt `anzahl` Ziehungen mit Zurücklegen. `proben` enthält genau einen Eintrag je gezogener Folgenummer, aufsteigend:
+
+```
+Probe = { seq, event | auszug, pfad, vorgaenger?: { hash, pfad }, indexBelege?: [ { schluessel, keyHash, anzahl, kette, index, pfad } ], entscheidung?: { ereignisse } }
+```
+
+Geprüft wird, je nach `pruefungen`: Kette (Prüfsumme des Ereignisses, Einschluss unter `seq`, bei `seq` größer 0 die Prüfsumme des Vorgängers gleich `prevHash` samt Einschluss, bei `seq` gleich 0 `prevHash` aus 64 Nullen), Index (für jeden Schlüssel des Ereignisses ein Blatt mit Anzahl mindestens 1, nur bei offenem Ereignis) und Entscheidung (jedes Ereignis der Typen `AccessDenied` und `FederatedQueryExecuted` trägt Belege, die ein Entscheidungsnachweis nach Abschnitt 9 bestätigt). Bei einem einzigen Verstoß besteht die Stichprobe nicht und nennt keine Schranke. Sonst gilt: Mit Sicherheit `konfidenz` liegt der Anteil verletzender Ereignisse unter `1 - (1 - konfidenz)^(1/anzahl)`.
+
+Die Schranke sagt nichts über einzelne seltene Verstöße. Sie gilt nur, wenn der Prüfpunkt von Zeugen bestätigt ist, sonst hätte der Betreiber mehrere vorbereiten und den günstigen später vorlegen können.
+
+## 16. Indexregeln 2 (Zählprotokolle)
+
+`indexregeln-2` erweitert die Schlüssel aus Abschnitt 8.1. Hat ein Ereignis ein Feld `at` mit einer ganzen Zahl von 0 bis 253402300799999 (Millisekunden seit 1970), sei `M` der Kalendermonat nach UTC in der Form `JJJJ-MM`. Zu den bisherigen Schlüsseln kommen `monat=M` und für jeden bisherigen Schlüssel `K` der Schlüssel `K|monat=M`. Die Schlüsselprüfsumme beginnt mit `indexregeln-2\n`, die Erweiterungszeile heißt `defconder-index-2`. Ein Prüfpunkt trägt genau eine Indexzeile, eine Aussage nennt dieselben Regeln wie der Prüfpunkt.
+
+Eine Aussage ohne `ereignisse` beweist so die Zahl der Ereignisse eines Typs in einem Monat, ohne die Ereignisse zu zeigen. Die Summe mehrerer Monate bildet, wer die bewiesenen Zahlen addiert.
+
+## 17. Freigabe nur gegen Protokolleintrag
+
+Daten liegen verschlüsselt. Der Schlüssel ist unter `n` Schlüsselhütern geteilt, `k` von ihnen genügen. Ein Hüter gibt seinen Anteil nur heraus, wenn die Anfrage im Protokoll eines von Zeugen bestätigten Prüfpunkts steht. Wer entschlüsselt hat, hat also einen Eintrag hinterlassen.
+
+Teilen: Shamir über GF(2^8) mit dem Polynom `x^8 + x^4 + x^3 + x + 1`. Ein Anteil ist `x (1 bis 255) || y-Bytes`. Anfrage: ein Ereignis vom Typ `ZugriffAngefragt` mit den Feldern `objectId` und `empfaengerSchluessel` (öffentlicher X25519-Schlüssel, 32 Byte, Base64). Der Hüter prüft den Prüfpunkt gegen die festgelegten Schlüssel (Protokoll, Zeugen, Schwelle), den Einschluss und den Typ des Ereignisses. Er antwortet mit der Quittung und dem Anteil, verschlüsselt an den Empfänger: X25519 mit einem flüchtigen Schlüssel, `HKDF-SHA-256( Geheimnis, Salz = Rohbytes der Anfrageprüfsumme, Info = "defconder-freigabe-1", 32 Byte )`, AES-256-GCM mit den Rohbytes der Anfrageprüfsumme als zusätzlichen Daten.
+
+```
+Quittung = { schema: "defconder-freigabequittung-1", hueter, anfrageHash, seq, objektId, nutzerId | null, groesse, wurzel, at, anteil, signatur }
+```
+
+`signatur` ist die Ed25519-Signatur des Hüters (Typ `0x01`) über `kanonisch( Quittung ohne signatur )`, hex. `groesse` und `wurzel` nennen den Prüfpunkt, den der Hüter gesehen hat.
+
+### 17.1 Freigabenachweis `defconder-freigabe-1`
+
+```
+{ schema, notiz, logSchluessel?, anfrage: { event | auszug, pfad }, objektId, nutzerId?, hueter?, schwelle?, quittungen: [ Quittung ], konsistenz?: { "<von>-<bis>": { pfad } } }
+```
+
+Der Prüfer verlangt: gültiger Prüfpunkt, die Anfrage liegt unter `seq` im Prüfpunkt und nennt `objectId` gleich `objektId`, mindestens `schwelle` Quittungen verschiedener festgelegter Hüter mit gültiger Signatur, die genau diese Anfrage (Prüfsumme, `seq`, Objekt, Nutzer) nennen und einen Stand `groesse` größer `seq` und höchstens der Größe des Prüfpunkts. Ist `groesse` kleiner, verlangt er den Konsistenzbeweis von `groesse` bis zur Größe des Prüfpunkts mit der Wurzel der Quittung als alter Wurzel.
+
+### 17.2 Freigabebericht `defconder-freigabebericht-1`
+
+Ein Hüter unterschreibt auf Verlangen eine Auskunft `{ schema: "defconder-freigabeauskunft-1", hueter, objektId, quittungen: [ { anfrageHash, at } ], bis, anzahlGesamt, signatur }` mit denselben Regeln für `signatur`.
+
+```
+{ schema, objektId, schwelle, auskuenfte: [ Auskunft ], weitereQuittungen?: [ Quittung ], aussage?: Aussage }
+```
+
+Bei `n` festgelegten Hütern und der Schwelle `k` verlangt der Prüfer mindestens `n - k + 1` gültige Auskünfte. Listen alle keine Quittung, können höchstens `k - 1` Hüter eine ausgestellt haben, und ein Schlüssel konnte nicht freigegeben werden. Eine Quittung in `weitereQuittungen`, die eine Auskunft desselben Hüters verschweigt, macht den Bericht ungültig. Ist `aussage` beigefügt (Abschnitt 8), muss jede genannte Anfrage unter den Ereignissen des Protokolls zu `objectId` stehen.
+
+Grenzen: Die Hüter müssen unabhängig voneinander arbeiten. Wer `k` Hüter auf seine Seite bringt, entschlüsselt ohne Eintrag. Ein Eintrag steht erst im nächsten bezeugten Prüfpunkt, das kostet Zeit. Wer den Klartext hat, kann ihn kopieren.
+
+## 18. Beweiserneuerung `defconder-erneuerung-1`
+
+Hält den Beweiswert eines Prüfpunkts über den Bruch eines Verfahrens hinaus. Wer nach dem Bruch von Ed25519 eine Signatur fälscht, kann sie nicht vor das Quantenzeitalter datieren, wenn der Prüfpunkt davor unter einem anderen Verfahren im Zeitbeweis stand.
+
+```
+{ schema, notiz, logSchluessel?, glieder: [ Glied ] }
+Glied = { schema: "defconder-erneuerungsglied-1", vorher, zeit, verfahren, schluessel, signatur, zeitbeweis?: { ots, koepfe } }
+```
+
+`vorher` ist beim ersten Glied `hex( SHA-256( Text des Prüfpunkts ) )`, sonst `hex( SHA-256( kanonisch( voriges Glied ohne zeitbeweis ) ) )`. `signatur` ist die Signatur des Schlüssels (hashbasiert mit der Kontextzeichenfolge `defconder-erneuerung-1`, oder Ed25519) über `kanonisch( Glied ohne signatur und zeitbeweis )`, hex. Der Zeitbeweis stempelt `SHA-256( kanonisch( Glied ohne zeitbeweis ) )`, also die Datei mit genau diesem Text. Die Zeiten steigen, jede genannte Zeit liegt nicht nach dem bestätigten Zeitpunkt.
+
+Mit der Annahme `Verfahren = Datum` verlangt der Prüfer für jedes angenommen gebrochene Verfahren ein Glied anderer Art, dessen bestätigter Zeitpunkt vor dem Datum liegt und das zu diesem Zeitpunkt selbst nach der Annahme noch nicht gebrochen war.
+
+## 19. Veröffentlichung des Prüfers `defconder-pruefer-release-1`
+
+```
+{ manifest: { schema, version, htmlSha256, summenSha256, dateien }, signaturen: [ { verfahren, schluessel, signatur } ] }
+```
+
+`htmlSha256` ist die SHA-256 der Datei `pruefer.html`, `summenSha256` die der Liste `SHA256SUMS` (Prüfsumme und Pfad aller Dateien des Prüfers). Die Seite wird reproduzierbar gebaut, der Bau liefert bei gleichem Quelltext dieselben Bytes. Signiert wird `kanonisch( manifest )` einmal mit Ed25519 und einmal hashbasiert (Kontextzeichenfolge `defconder-release-1`). Wer Schlüssel festlegt, verlangt von jedem festgelegten Schlüssel eine gültige Signatur.

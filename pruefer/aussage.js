@@ -5,7 +5,11 @@ import { pruefpunktPruefen } from "./pruefer-kern.js";
 const encoder = new TextEncoder();
 
 export const INDEXREGELN = "indexregeln-1";
+export const INDEXREGELN_2 = "indexregeln-2";
 export const INDEXZEILE = "defconder-index-1";
+export const INDEXZEILE_2 = "defconder-index-2";
+const ZEILEN = { [INDEXREGELN]: INDEXZEILE, [INDEXREGELN_2]: INDEXZEILE_2 };
+const MAX_ZEIT_MS = 253402300799999;
 export const SCHLUESSELFELDER = ["id", "recordId", "userId", "actorId", "createdBy", "executedBy", "publishedBy", "deletedBy", "uploadedBy", "approvedBy", "sha256", "assetId", "entityTypeId", "actionTypeId", "objectId", "username", "purposeId", "apiKeyId"];
 const MAX_WERT = 200;
 const MAX_SCHLUESSEL = 400;
@@ -13,7 +17,13 @@ const MAX_EREIGNISSE_IN_AUSSAGE = 100000;
 const NULL32 = new Uint8Array(32);
 const EINS32 = new Uint8Array(32).fill(255);
 
-export function schluesselVon(ereignis) {
+export function monatVon(ereignis) {
+  const at = ereignis.at;
+  if (!Number.isInteger(at) || at < 0 || at > MAX_ZEIT_MS) return null;
+  return new Date(at).toISOString().slice(0, 7);
+}
+
+export function schluesselVon(ereignis, regeln = INDEXREGELN) {
   const menge = new Set();
   if (typeof ereignis.type === "string") menge.add(`typ=${ereignis.type}`);
   for (const feld of SCHLUESSELFELDER) {
@@ -21,6 +31,14 @@ export function schluesselVon(ereignis) {
     if (typeof wert === "string" && wert.length >= 1 && wert.length <= MAX_WERT) {
       menge.add(`${feld}=${wert}`);
       menge.add(`${ereignis.type}|${feld}=${wert}`);
+    }
+  }
+  if (regeln === INDEXREGELN_2) {
+    const monat = monatVon(ereignis);
+    if (monat) {
+      const basis = [...menge];
+      menge.add(`monat=${monat}`);
+      for (const k of basis) menge.add(`${k}|monat=${monat}`);
     }
   }
   return [...menge];
@@ -36,8 +54,8 @@ function verbinden(...teile) {
   return out;
 }
 
-export async function schluesselHash(schluessel) {
-  return sha256Bytes(encoder.encode(`${INDEXREGELN}\n${schluessel}`));
+export async function schluesselHash(schluessel, regeln = INDEXREGELN) {
+  return sha256Bytes(encoder.encode(`${regeln}\n${schluessel}`));
 }
 
 export function anzahlBytes(anzahl) {
@@ -60,10 +78,10 @@ export async function kettenWert(ereignisHashes) {
   return kette;
 }
 
-export async function indexAufbauen(ereignisse) {
+export async function indexAufbauen(ereignisse, regeln = INDEXREGELN) {
   const tabelle = new Map();
   for (const e of ereignisse) {
-    for (const schluessel of schluesselVon(e)) {
+    for (const schluessel of schluesselVon(e, regeln)) {
       const eintrag = tabelle.get(schluessel) ?? { anzahl: 0, kette: NULL32, hashes: [] };
       eintrag.kette = await kettePlus(eintrag.kette, e.hash);
       eintrag.anzahl += 1;
@@ -72,7 +90,7 @@ export async function indexAufbauen(ereignisse) {
     }
   }
   const zeilen = [];
-  for (const [schluessel, eintrag] of tabelle) zeilen.push({ schluessel, keyHash: await schluesselHash(schluessel), ...eintrag });
+  for (const [schluessel, eintrag] of tabelle) zeilen.push({ schluessel, keyHash: await schluesselHash(schluessel, regeln), ...eintrag });
   zeilen.push({ schluessel: null, keyHash: NULL32, anzahl: 0, kette: NULL32, hashes: [] });
   zeilen.push({ schluessel: null, keyHash: EINS32, anzahl: 0, kette: NULL32, hashes: [] });
   zeilen.sort((a, b) => (hex(a.keyHash) < hex(b.keyHash) ? -1 : hex(a.keyHash) > hex(b.keyHash) ? 1 : 0));
@@ -82,12 +100,12 @@ export async function indexAufbauen(ereignisse) {
   return { zeilen, blaetter, wurzel, anzahl: zeilen.length, tabelle };
 }
 
-export function indexZeile(anzahl, wurzelHex) {
-  return `${INDEXZEILE} ${anzahl} ${base64Encode(unhex(wurzelHex))}`;
+export function indexZeile(anzahl, wurzelHex, regeln = INDEXREGELN) {
+  return `${ZEILEN[regeln]} ${anzahl} ${base64Encode(unhex(wurzelHex))}`;
 }
 
 export function indexZeileLesen(erweiterungen) {
-  const zeilen = (erweiterungen ?? []).filter((z) => z.startsWith(`${INDEXZEILE} `));
+  const zeilen = (erweiterungen ?? []).filter((z) => z.startsWith(`${INDEXZEILE} `) || z.startsWith(`${INDEXZEILE_2} `));
   if (zeilen.length !== 1) throw new Error(zeilen.length === 0 ? "Der Prüfpunkt enthält keine Indexzeile." : "Der Prüfpunkt enthält mehrere Indexzeilen.");
   const teile = zeilen[0].split(" ");
   if (teile.length !== 3 || !/^(0|[1-9][0-9]*)$/.test(teile[1])) throw new Error("Die Indexzeile ist ungültig.");
@@ -95,14 +113,14 @@ export function indexZeileLesen(erweiterungen) {
   if (!Number.isSafeInteger(anzahl) || anzahl < 2 || anzahl > MAX_BAUMGROESSE) throw new Error("Die Zahl der Indexeinträge ist ungültig.");
   const wurzel = base64Decode(teile[2]);
   if (wurzel.length !== 32) throw new Error("Die Indexwurzel hat nicht 32 Byte.");
-  return { anzahl, wurzelHex: hex(wurzel) };
+  return { anzahl, wurzelHex: hex(wurzel), regeln: zeilen[0].startsWith(`${INDEXZEILE_2} `) ? INDEXREGELN_2 : INDEXREGELN };
 }
 
 function istHex64(text) {
   return typeof text === "string" && /^[0-9a-f]{64}$/.test(text);
 }
 
-async function blattPruefen(b, anzahlBlaetter, wurzelHex) {
+export async function blattPruefen(b, anzahlBlaetter, wurzelHex) {
   if (!b || typeof b !== "object" || !istHex64(b.keyHash) || !istHex64(b.kette) || !Number.isSafeInteger(b.anzahl) || b.anzahl < 0 || !Number.isInteger(b.index) || !Array.isArray(b.pfad)) return false;
   const leaf = await leafHashOfData(blattDaten(unhex(b.keyHash), b.anzahl, unhex(b.kette)));
   return verifyInclusionOfLeaf({ index: b.index, treeSize: anzahlBlaetter, leaf, path: b.pfad, rootHash: wurzelHex });
@@ -134,7 +152,7 @@ export async function aussagePruefen(doc, opts = {}) {
   };
   try {
     if (!doc || doc.schema !== "defconder-aussage-1") return abbruch("Unbekanntes Format.");
-    if (doc.regeln !== INDEXREGELN) return abbruch("Unbekannte Indexregeln.");
+    if (!ZEILEN[doc.regeln]) return abbruch("Unbekannte Indexregeln.");
     if (typeof doc.notiz !== "string" || !Array.isArray(doc.aussagen) || doc.aussagen.length === 0 || doc.aussagen.length > 200) return abbruch("Prüfpunkt oder Aussagen fehlen.");
     const festgelegt = Boolean(opts.logSchluessel);
     const logSchluessel = opts.logSchluessel ?? doc.logSchluessel;
@@ -144,13 +162,14 @@ export async function aussagePruefen(doc, opts = {}) {
     if (!punktErgebnis.punkt) return { ok: false, checks, warnungen, aussagen, stufe: 0, stufeText: "Nicht bestanden" };
     const punkt = punktErgebnis.punkt;
     const index = indexZeileLesen(punkt.erweiterungen);
-    add("indexzeile", `Der Prüfpunkt bindet einen Index mit ${index.anzahl} Einträgen`, true, `Indexwurzel ${index.wurzelHex.slice(0, 16)}…`);
+    add("indexzeile", `Der Prüfpunkt bindet einen Index mit ${index.anzahl} Einträgen (${index.regeln})`, true, `Indexwurzel ${index.wurzelHex.slice(0, 16)}…`);
+    add("indexregeln", "Die Aussage nennt dieselben Indexregeln wie der Prüfpunkt", index.regeln === doc.regeln, `Aussage ${doc.regeln}, Prüfpunkt ${index.regeln}`);
     for (const a of doc.aussagen) {
       if (!a || typeof a.schluessel !== "string" || a.schluessel.length === 0 || a.schluessel.length > MAX_SCHLUESSEL) {
         add("aussage", "Aussage hat einen gültigen Schlüssel", false, "Schlüssel fehlt oder ist zu lang.");
         continue;
       }
-      const K = hex(await schluesselHash(a.schluessel));
+      const K = hex(await schluesselHash(a.schluessel, doc.regeln));
       if (a.art === "vorhanden") {
         const leafOk = await blattPruefen({ keyHash: K, anzahl: a.anzahl, kette: a.kette, index: a.index, pfad: a.pfad }, index.anzahl, index.wurzelHex);
         add("vorhanden_index", `„${a.schluessel}“ steht im Index des Prüfpunkts (${a.anzahl} Ereignisse)`, leafOk && a.anzahl >= 1, leafOk ? "" : "Der Einschlussbeweis des Indexeintrags ist ungültig.");
@@ -202,7 +221,7 @@ export async function aussagePruefen(doc, opts = {}) {
     const intern = checks.every((c) => c.ok);
     const { stufe, stufeText } = stufeBestimmen(intern, festgelegt, punktErgebnis);
     if (intern && Number.isInteger(opts.mindestStufe) && stufe < opts.mindestStufe) add("mindeststufe", `Mindestens Vertrauensstufe ${opts.mindestStufe} verlangt`, false, `erreicht ist Stufe ${stufe}`);
-    return { ok: checks.every((c) => c.ok), checks, warnungen, aussagen, stufe, stufeText: checks.every((c) => c.ok) ? stufeText : "Nicht bestanden", punkt };
+    return { ok: checks.every((c) => c.ok), checks, warnungen, aussagen, stufe, stufeText: checks.every((c) => c.ok) ? stufeText : "Nicht bestanden", punkt, pq: punktErgebnis.pq };
   } catch (err) {
     return abbruch(`Unerwarteter Fehler beim Prüfen: ${String(err?.message ?? err)}`);
   }

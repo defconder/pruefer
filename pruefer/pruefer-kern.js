@@ -1,7 +1,7 @@
 import { hex, unhex, sha256Bytes, leafHash, verifyInclusion, verifyConsistency, MAX_BAUMGROESSE } from "./merkle.js";
 import { ereignisHashPruefen, auszugPruefen } from "./ereignis.js";
 import { zeitankerPruefen } from "./zeitanker.js";
-import { notizLesen, pruefpunktLesen, schluesselLesen, signaturenPruefen, base64Decode, TYP_ED25519, TYP_KOSIGNATUR } from "./note.js";
+import { notizLesen, pruefpunktLesen, schluesselLesen, signaturenPruefen, base64Decode, TYP_ED25519, TYP_KOSIGNATUR, TYP_SLH } from "./note.js";
 
 const encoder = new TextEncoder();
 const MAX_EREIGNISSE = 200000;
@@ -84,9 +84,27 @@ function pruefeForm(pkg) {
   return null;
 }
 
+async function hashbasiertPruefen(notiz, punkt, opts, add) {
+  if (!opts.logSchluesselPq) return null;
+  try {
+    const pq = await schluesselLesen(opts.logSchluesselPq);
+    if (pq.typ !== TYP_SLH || pq.name !== punkt.origin) {
+      add("transparenz_pq", "Hashbasierter Schlüssel passt zum Protokoll", false, pq.typ !== TYP_SLH ? "Der festgelegte Schlüssel ist kein hashbasierter Schlüssel." : `Prüfpunkt ${punkt.origin}, Schlüssel ${pq.name}`);
+      return false;
+    }
+    const sig = await signaturenPruefen(notiz, [pq]);
+    const ok = sig.gueltig.length === 1 && sig.fehlerhaft.length === 0;
+    add("transparenz_pq", `Prüfpunkt trägt zusätzlich die hashbasierte Signatur (${pq.verfahren.toUpperCase().replace("SHA2-", "SLH-DSA-SHA2-")}) des festgelegten Protokollschlüssels`, ok, ok ? "Diese Signatur bleibt auch gegenüber einem späteren Quantencomputer gültig, soweit SHA-256 hält." : "Die Signatur fehlt oder ist ungültig.");
+    return ok;
+  } catch (err) {
+    add("transparenz_pq", "Hashbasierter Schlüssel ist lesbar", false, String(err?.message ?? err));
+    return false;
+  }
+}
+
 async function pruefeTransparenz(pkg, opts, head, add) {
   const t = pkg.transparenz;
-  const ergebnis = { vorhanden: Boolean(t), logGebunden: false, zeugenGueltig: 0, schwelle: 0, gebunden: false, gedeckt: 0, zeitanker: null };
+  const ergebnis = { vorhanden: Boolean(t), logGebunden: false, zeugenGueltig: 0, schwelle: 0, gebunden: false, gedeckt: 0, zeitanker: null, pq: null };
   if (!t) return ergebnis;
   let notiz;
   let punkt;
@@ -112,7 +130,10 @@ async function pruefeTransparenz(pkg, opts, head, add) {
   ergebnis.logGebunden = Boolean(festgelegterLog) && logSig.gueltig.length === 1 && logSig.fehlerhaft.length === 0;
   add("transparenz_log", festgelegterLog ? "Prüfpunkt trägt die Signatur des festgelegten Protokollschlüssels" : "Prüfpunkt trägt eine Signatur des mitgelieferten Protokollschlüssels (nicht festgelegt)", logSig.gueltig.length === 1 && logSig.fehlerhaft.length === 0, `Baumgröße ${punkt.groesse}, Wurzel ${punkt.wurzelHex.slice(0, 16)}…`);
 
-  if (logSig.gueltig.length === 1 && logSig.fehlerhaft.length === 0) ergebnis.zeitanker = await zeitankerPruefen(punkt.erweiterungen, opts, add);
+  if (logSig.gueltig.length === 1 && logSig.fehlerhaft.length === 0) {
+    ergebnis.zeitanker = await zeitankerPruefen(punkt.erweiterungen, opts, add);
+    ergebnis.pq = await hashbasiertPruefen(notiz, punkt, opts, add);
+  }
 
   const zeugen = await Promise.all((opts.zeugen ?? []).map((z) => schluesselLesen(z)));
   const nurKosig = zeugen.filter((z) => z.typ === TYP_KOSIGNATUR);
@@ -280,7 +301,7 @@ export async function verifyPackage(pkg, opts = {}) {
     }
 
     const transparenz = await pruefeTransparenz(pkg, opts, head, add);
-    if (!transparenz.vorhanden && (opts.zeugen ?? []).length > 0) add("transparenz_fehlt", "Das Paket enthält Gegenzeichnungen der festgelegten Zeugen", false, "Es sind Zeugen festgelegt, aber das Paket bringt keinen Prüfpunkt mit.");
+    if (!transparenz.vorhanden && ((opts.zeugen ?? []).length > 0 || opts.logSchluesselPq)) add("transparenz_fehlt", "Das Paket enthält Gegenzeichnungen der festgelegten Zeugen und die verlangte hashbasierte Signatur", false, "Es sind Zeugen oder ein hashbasierter Schlüssel festgelegt, aber das Paket bringt keinen Prüfpunkt mit.");
     if (!transparenz.vorhanden) warnungen.push("Das Paket enthält keine Gegenzeichnungen unabhängiger Zeugen. Ein Betreiber könnte das Protokoll vor der Unterschrift neu geschrieben haben.");
     else if (!opts.logSchluessel) warnungen.push("Der Schlüssel des Protokolls ist nicht festgelegt. Die Gegenzeichnungen zählen nur, wenn der Prüfer den Protokollschlüssel und die Zeugen kennt.");
     else if (!(opts.zeugen ?? []).length) warnungen.push("Es sind keine Zeugen festgelegt. Ohne bekannte Zeugen lässt sich die Unabhängigkeit der Gegenzeichnungen nicht beurteilen.");
@@ -299,7 +320,7 @@ export async function verifyPackage(pkg, opts = {}) {
     if (Number.isInteger(opts.mindestStufe) && stufe < opts.mindestStufe) add("mindeststufe", `Mindestens Vertrauensstufe ${opts.mindestStufe} verlangt`, false, `erreicht ist Stufe ${stufe}`);
     const bestanden = checks.every((c) => c.ok);
     if (!bestanden) stufeText = "Nicht bestanden";
-    return { ok: bestanden, checks, warnungen, stufe, stufeText, treeSize: head.treeSize, keyId: head.signature.keyId, exportedAt: pkg.createdAt, asset: pkg.asset, zeitanker: transparenz.zeitanker };
+    return { ok: bestanden, checks, warnungen, stufe, stufeText, treeSize: head.treeSize, keyId: head.signature.keyId, exportedAt: pkg.createdAt, asset: pkg.asset, zeitanker: transparenz.zeitanker, pq: transparenz.pq };
   } catch (err) {
     return abbruch(`Unerwarteter Fehler beim Prüfen: ${String(err?.message ?? err)}`);
   }
@@ -327,8 +348,10 @@ export async function pruefpunktPruefen(text, opts = {}) {
       zeugenGueltig = sig.gueltig.length;
       add("zeugen", `${zeugenGueltig} von mindestens ${schwelle} geforderten Gegenzeichnungen festgelegter Zeugen sind gültig`, zeugenGueltig >= schwelle && schwelle > 0 && sig.fehlerhaft.length === 0, sig.gueltig.map((g) => g.name + " (" + new Date(g.zeit * 1000).toISOString() + ")").join(", "));
     }
-    const zeitanker = logSig.gueltig.length === 1 && logSig.fehlerhaft.length === 0 ? await zeitankerPruefen(punkt.erweiterungen, opts, add) : null;
-    return { ok: checks.every((c) => c.ok), checks, punkt, zeugenGueltig, schwelle, zeitanker };
+    const logOk = logSig.gueltig.length === 1 && logSig.fehlerhaft.length === 0;
+    const zeitanker = logOk ? await zeitankerPruefen(punkt.erweiterungen, opts, add) : null;
+    const pq = logOk ? await hashbasiertPruefen(notiz, punkt, opts, add) : null;
+    return { ok: checks.every((c) => c.ok), checks, punkt, zeugenGueltig, schwelle, zeitanker, pq };
   } catch (err) {
     add("form", "Prüfpunkt ist lesbar", false, String(err?.message ?? err));
     return { ok: false, checks, punkt: null, zeugenGueltig: 0, schwelle: 0 };

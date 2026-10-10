@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const dateien = ["merkle.js", "note.js", "ereignis.js", "zeitanker.js", "pruefer-kern.js", "aussage.js", "regeln.js", "entscheidung.js", "widerspruch.js", "bericht.js"];
+const dateien = ["merkle.js", "sha256sync.js", "slhdsa.js", "note.js", "ripemd160.js", "ereignis.js", "zeitanker.js", "pruefer-kern.js", "aussage.js", "regeln.js", "entscheidung.js", "widerspruch.js", "zeitbeweis.js", "stichprobe.js", "freigabe.js", "erneuerung.js", "bericht.js"];
 
 function umhuellen(datei, bekannt) {
   let quelltext = readFileSync(join(here, datei), "utf8");
@@ -29,6 +29,10 @@ const kern = bekannt.get("pruefer-kern.js");
 const aussage = bekannt.get("aussage.js");
 const entscheidung = bekannt.get("entscheidung.js");
 const widerspruch = bekannt.get("widerspruch.js");
+const zeitbeweis = bekannt.get("zeitbeweis.js");
+const stichprobe = bekannt.get("stichprobe.js");
+const freigabe = bekannt.get("freigabe.js");
+const erneuerung = bekannt.get("erneuerung.js");
 const bericht = bekannt.get("bericht.js");
 
 const stil = `
@@ -73,13 +77,35 @@ const { verifyPackage, pruefpunktPruefen } = ${kern};
 const { aussagePruefen } = ${aussage};
 const { entscheidungPruefen } = ${entscheidung};
 const { widerspruchPruefen } = ${widerspruch};
+const { zeitbeweisPruefen } = ${zeitbeweis};
+const { stichprobePruefen } = ${stichprobe};
+const { freigabePruefen, freigabeberichtPruefen } = ${freigabe};
+const { erneuerungPruefen } = ${erneuerung};
 const { berichtErzeugen, berichtText } = ${bericht};
 
 const zeilen = (id) => document.getElementById(id).value.split(/\\r?\\n/).map((z) => z.trim()).filter(Boolean);
+function bruchLesen() {
+  const zeilenListe = zeilen("bruch");
+  if (!zeilenListe.length) return undefined;
+  const ergebnis = {};
+  for (const z of zeilenListe) {
+    const [verfahren, datum] = z.split("=");
+    const zeit = Date.parse(datum + "T00:00:00Z");
+    if (verfahren && !Number.isNaN(zeit)) ergebnis[verfahren.trim()] = zeit;
+  }
+  return ergebnis;
+}
 const optionen = () => ({
   pinnedKeyIds: zeilen("kennungen"),
   logSchluessel: zeilen("logschluessel")[0],
+  logSchluesselPq: zeilen("logschluesselpq")[0],
   zeugen: zeilen("zeugen"),
+  hueter: zeilen("hueter").length ? zeilen("hueter") : undefined,
+  hueterSchwelle: Number(document.getElementById("hueterschwelle").value) || undefined,
+  erneuerungsSchluessel: zeilen("erneuerungsschluessel").length ? zeilen("erneuerungsschluessel") : undefined,
+  bruchAnnahme: bruchLesen(),
+  mindestAnzahl: document.getElementById("mindestanzahl").value === "" ? undefined : Number(document.getElementById("mindestanzahl").value),
+  mindestAbstand: document.getElementById("mindestabstand").value === "" ? undefined : Number(document.getElementById("mindestabstand").value),
   schwelle: Number(document.getElementById("schwelle").value) || undefined,
   mindestArbeitBits: document.getElementById("arbeit").value === "" ? undefined : Number(document.getElementById("arbeit").value),
   mindestStufe: document.getElementById("mindeststufe").value === "" ? undefined : Number(document.getElementById("mindeststufe").value),
@@ -171,6 +197,11 @@ los.addEventListener("click", async () => {
     const bytes = original.files.length ? new Uint8Array(await original.files[0].arrayBuffer()) : null;
     if (doc?.schema === "defconder-aussage-1") ergebnisAnzeigen(ausgabe, "aussage", await aussagePruefen(doc, optionen()), "Alle Prüfungen bestanden.", "Mindestens eine Prüfung ist fehlgeschlagen.");
     else if (doc?.schema === "defconder-entscheidung-1") ergebnisAnzeigen(ausgabe, "entscheidung", await entscheidungPruefen(doc, optionen()), "Alle Prüfungen bestanden.", "Mindestens eine Prüfung ist fehlgeschlagen.");
+    else if (doc?.schema === "defconder-zeitbeweis-1") ergebnisAnzeigen(ausgabe, "zeitbeweis", await zeitbeweisPruefen(doc, optionen()), "Alle Prüfungen bestanden.", "Mindestens eine Prüfung ist fehlgeschlagen.");
+    else if (doc?.schema === "defconder-stichprobe-1") ergebnisAnzeigen(ausgabe, "stichprobe", await stichprobePruefen(doc, optionen()), "Alle Prüfungen bestanden.", "Mindestens eine Prüfung ist fehlgeschlagen.");
+    else if (doc?.schema === "defconder-freigabe-1") ergebnisAnzeigen(ausgabe, "freigabe", await freigabePruefen(doc, optionen()), "Alle Prüfungen bestanden.", "Mindestens eine Prüfung ist fehlgeschlagen.");
+    else if (doc?.schema === "defconder-freigabebericht-1") ergebnisAnzeigen(ausgabe, "freigabebericht", await freigabeberichtPruefen(doc, optionen()), "Alle Prüfungen bestanden.", "Mindestens eine Prüfung ist fehlgeschlagen.");
+    else if (doc?.schema === "defconder-erneuerung-1") ergebnisAnzeigen(ausgabe, "erneuerung", await erneuerungPruefen(doc, optionen()), "Alle Prüfungen bestanden.", "Mindestens eine Prüfung ist fehlgeschlagen.");
     else if (doc?.schema === "defconder-widerspruch-1") {
       const r = await widerspruchPruefen(doc, optionen());
       ergebnisAnzeigen(ausgabe, null, r, r.text, r.text);
@@ -205,21 +236,28 @@ const html = `<!doctype html>
 <main>
 <div>
 <h1>Defconder Beweisprüfer</h1>
-<p>Prüft Beweispakete, Aussagen über das Protokoll, Entscheidungsnachweise, Widerspruchsbeweise und Prüfpunkte vollständig auf diesem Gerät. Die Seite darf technisch keine Verbindung ins Netz aufbauen, es werden keine Daten verschickt, und es braucht weder Netz noch Defconder.</p>
+<p>Prüft Beweispakete, Aussagen und Zählprotokolle, Entscheidungsnachweise, Widerspruchsbeweise, Zeitbeweise, Stichproben, Freigabenachweise, Beweiserneuerungen und Prüfpunkte vollständig auf diesem Gerät. Die Seite darf technisch keine Verbindung ins Netz aufbauen, es werden keine Daten verschickt, und es braucht weder Netz noch Defconder.</p>
 </div>
 <div class="card">
 <h2>Vertrauen festlegen (empfohlen)</h2>
 <p>Ein Dokument bringt seinen eigenen Schlüssel mit. Ohne festgelegte Schlüssel beweist die Prüfung nur, dass es in sich stimmig ist. Tragen Sie ein, was Sie auf anderem Weg vom Betreiber und von unabhängigen Zeugen erhalten haben.</p>
 <label>Schlüsselkennungen des Betreibers (eine je Zeile)<textarea id="kennungen" spellcheck="false" placeholder="a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6"></textarea></label>
 <label>Schlüssel des Protokolls<small>Form Name+Kennung+Daten</small><textarea id="logschluessel" spellcheck="false" placeholder="defconder.example/instanz+1a2b3c4d+AQ..."></textarea></label>
+<label>Hashbasierter Schlüssel des Protokolls (optional)<small>Verlangt zusätzlich eine Signatur, die auch ein künftiger Quantencomputer nicht fälschen kann.</small><textarea id="logschluesselpq" spellcheck="false" placeholder="defconder.example/instanz+9f8e7d6c+/w..."></textarea></label>
 <label>Schlüssel unabhängiger Zeugen (einer je Zeile)<textarea id="zeugen" spellcheck="false" placeholder="zeuge.example+5e6f7a8b+BA..."></textarea></label>
 <label>Mindestens gültige Gegenzeichnungen<input id="schwelle" type="number" min="1" value="2"></label>
 <label>Mindeststufe<small>Das Dokument gilt nur als bestanden, wenn mindestens diese Vertrauensstufe erreicht wird.</small><select id="mindeststufe"><option value="">keine Forderung</option><option value="1">Stufe 1, Schlüssel gebunden</option><option value="2">Stufe 2, bezeugt</option></select></label>
+<label>Schlüssel der Schlüsselhüter (einer je Zeile, für Freigabenachweise)<textarea id="hueter" spellcheck="false"></textarea></label>
+<label>Hüter, die zusammen einen Schlüssel freigeben können<input id="hueterschwelle" type="number" min="1"></label>
+<label>Schlüssel für Erneuerungen (einer je Zeile)<textarea id="erneuerungsschluessel" spellcheck="false"></textarea></label>
+<label>Angenommener Bruch eines Verfahrens (eine Angabe je Zeile, für Erneuerungen)<small>Form Verfahren=JJJJ-MM-TT, zum Beispiel ed25519=2035-01-01</small><textarea id="bruch" spellcheck="false"></textarea></label>
+<label>Mindestzahl der Ziehungen einer Stichprobe<input id="mindestanzahl" type="number" min="1"></label>
+<label>Mindestabstand des Zufalls in Blöcken<input id="mindestabstand" type="number" min="1"></label>
 <label>Mindestarbeit eines Zeitankers in Bit<small>Leer lassen für die Voreinstellung 64. Ein Bitcoin-Block mit weniger Arbeit beweist nichts.</small><input id="arbeit" type="number" min="0" max="200"></label>
 </div>
 <div class="card">
 <h2>Dokument prüfen</h2>
-<label>Beweispaket, Aussage, Entscheidungsnachweis oder Widerspruchsbeweis (.json)<input id="paket" type="file" accept=".json,application/json"></label>
+<label>Beweispaket, Aussage, Entscheidungsnachweis, Widerspruchsbeweis, Zeitbeweis, Stichprobe, Freigabenachweis oder Erneuerung (.json)<input id="paket" type="file" accept=".json,application/json"></label>
 <label>Originaldatei, falls das Beweispaket sie nicht enthält (optional)<input id="original" type="file"></label>
 <button id="los" disabled>Prüfen</button>
 </div>

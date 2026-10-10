@@ -1,17 +1,34 @@
 import hashlib
 import re
+from datetime import datetime, timedelta, timezone
 
 from ereignis import ereignis_hash_pruefen
 from pruefpunkt import TYP_ED25519, base64_streng, blatt_aus_daten, blatt_hash, einschluss_pruefen, notiz_lesen, pruefpunkt_lesen, schluessel_lesen, signaturen_pruefen, wurzel
 
 INDEXREGELN = "indexregeln-1"
+INDEXREGELN_2 = "indexregeln-2"
 INDEXZEILE = "defconder-index-1"
+INDEXZEILE_2 = "defconder-index-2"
+ZEILEN = {INDEXREGELN: INDEXZEILE, INDEXREGELN_2: INDEXZEILE_2}
+MAX_ZEIT_MS = 253402300799999
 SCHLUESSELFELDER = ["id", "recordId", "userId", "actorId", "createdBy", "executedBy", "publishedBy", "deletedBy", "uploadedBy", "approvedBy", "sha256", "assetId", "entityTypeId", "actionTypeId", "objectId", "username", "purposeId", "apiKeyId"]
 NULL32 = bytes(32)
 EINS32 = bytes([255]) * 32
 
 
-def schluessel_von(ereignis):
+def monat_von(ereignis):
+    at = ereignis.get("at")
+    if isinstance(at, bool):
+        return None
+    if isinstance(at, float) and at.is_integer():
+        at = int(at)
+    if not isinstance(at, int) or at < 0 or at > MAX_ZEIT_MS:
+        return None
+    d = datetime(1970, 1, 1, tzinfo=timezone.utc) + timedelta(seconds=at // 1000)
+    return f"{d.year:04d}-{d.month:02d}"
+
+
+def schluessel_von(ereignis, regeln=INDEXREGELN):
     menge = []
     if isinstance(ereignis.get("type"), str):
         menge.append(f"typ={ereignis['type']}")
@@ -21,11 +38,18 @@ def schluessel_von(ereignis):
             for s in (f"{feld}={wert}", f"{ereignis['type']}|{feld}={wert}"):
                 if s not in menge:
                     menge.append(s)
+    if regeln == INDEXREGELN_2:
+        monat = monat_von(ereignis)
+        if monat is not None:
+            basis = list(menge)
+            for s in [f"monat={monat}"] + [f"{k}|monat={monat}" for k in basis]:
+                if s not in menge:
+                    menge.append(s)
     return menge
 
 
-def schluessel_hash(schluessel):
-    return hashlib.sha256(f"{INDEXREGELN}\n{schluessel}".encode("utf-8")).digest()
+def schluessel_hash(schluessel, regeln=INDEXREGELN):
+    return hashlib.sha256(f"{regeln}\n{schluessel}".encode("utf-8")).digest()
 
 
 def kette_plus(kette, ereignis_hash_hex):
@@ -36,13 +60,13 @@ def blatt_daten(key_hash, anzahl, kette):
     return key_hash + anzahl.to_bytes(8, "big") + kette
 
 
-def index_aufbauen(ereignisse):
+def index_aufbauen(ereignisse, regeln=INDEXREGELN):
     tabelle = {}
     for e in ereignisse:
-        for s in schluessel_von(e):
+        for s in schluessel_von(e, regeln):
             anzahl, kette = tabelle.get(s, (0, NULL32))
             tabelle[s] = (anzahl + 1, kette_plus(kette, e["hash"]))
-    zeilen = [(schluessel_hash(s), a, k) for s, (a, k) in tabelle.items()]
+    zeilen = [(schluessel_hash(s, regeln), a, k) for s, (a, k) in tabelle.items()]
     zeilen.append((NULL32, 0, NULL32))
     zeilen.append((EINS32, 0, NULL32))
     zeilen.sort(key=lambda z: z[0])
@@ -51,7 +75,7 @@ def index_aufbauen(ereignisse):
 
 
 def index_zeile_lesen(erweiterungen):
-    zeilen = [z for z in erweiterungen if z.startswith(INDEXZEILE + " ")]
+    zeilen = [z for z in erweiterungen if z.startswith(INDEXZEILE + " ") or z.startswith(INDEXZEILE_2 + " ")]
     if len(zeilen) != 1:
         raise ValueError("Keine oder mehrere Indexzeilen.")
     teile = zeilen[0].split(" ")
@@ -61,7 +85,7 @@ def index_zeile_lesen(erweiterungen):
     wurzel_bytes = base64_streng(teile[2])
     if anzahl < 2 or len(wurzel_bytes) != 32:
         raise ValueError("Ungültige Indexzeile.")
-    return {"anzahl": anzahl, "wurzel": wurzel_bytes.hex()}
+    return {"anzahl": anzahl, "wurzel": wurzel_bytes.hex(), "regeln": INDEXREGELN_2 if zeilen[0].startswith(INDEXZEILE_2 + " ") else INDEXREGELN}
 
 
 def _hex64(text):
@@ -80,7 +104,8 @@ def _blatt_pruefen(b, anzahl_blaetter, wurzel_hex):
 
 def aussage_pruefen(doc, log_schluessel, zeugen, schwelle):
     try:
-        if doc.get("schema") != "defconder-aussage-1" or doc.get("regeln") != INDEXREGELN:
+        regeln = doc.get("regeln")
+        if doc.get("schema") != "defconder-aussage-1" or regeln not in ZEILEN:
             return {"ok": False}
         notiz = notiz_lesen(doc["notiz"])
         punkt = pruefpunkt_lesen(notiz["koerper"])
@@ -91,10 +116,12 @@ def aussage_pruefen(doc, log_schluessel, zeugen, schwelle):
         zeugen_schluessel = [schluessel_lesen(z) for z in zeugen]
         zeugen_sig = signaturen_pruefen(notiz, zeugen_schluessel)
         index = index_zeile_lesen(punkt["erweiterungen"])
+        if index["regeln"] != regeln:
+            return {"ok": False}
         ergebnisse = []
         for a in doc["aussagen"]:
             schluessel = a["schluessel"]
-            k = schluessel_hash(schluessel).hex()
+            k = schluessel_hash(schluessel, regeln).hex()
             if a["art"] == "vorhanden":
                 ok = _blatt_pruefen({"keyHash": k, "anzahl": a["anzahl"], "kette": a["kette"], "index": a["index"], "pfad": a["pfad"]}, index["anzahl"], index["wurzel"]) and a["anzahl"] >= 1
                 if ok and "ereignisse" in a:

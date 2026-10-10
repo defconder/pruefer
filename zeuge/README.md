@@ -1,6 +1,6 @@
 # Defconder Zeuge
 
-Ein kleiner, eigenständiger Dienst, der Prüfpunkte eines Transparenzprotokolls gegenzeichnet, aber nur, wenn sich der neue Stand lückenlos aus dem letzten ergibt, den er gesehen hat. Protokoll nach [c2sp.org/tlog-witness](https://c2sp.org/tlog-witness), Gegenzeichnungen nach [c2sp.org/tlog-cosignature](https://c2sp.org/tlog-cosignature) (`cosignature/v1`, Ed25519). Lizenz Apache-2.0.
+Ein kleiner, eigenständiger Dienst, der Prüfpunkte eines Transparenzprotokolls gegenzeichnet, aber nur, wenn sich der neue Stand lückenlos aus dem letzten ergibt, den er gesehen hat. Protokoll nach [c2sp.org/tlog-witness](https://c2sp.org/tlog-witness), Gegenzeichnungen nach [c2sp.org/tlog-cosignature](https://c2sp.org/tlog-cosignature) (`cosignature/v1`, Ed25519). Lizenz Apache-2.0. English version: [README.en.md](README.en.md).
 
 ## Betrieb
 
@@ -22,7 +22,7 @@ Der Dienst spricht einfaches HTTP. Betreiben Sie ihn hinter einem Reverse-Proxy 
 
 Ein Betreiber, der ein früheres Ereignis ändert oder das Protokoll auf einen früheren Stand zurücksetzt, bekommt keine Gegenzeichnung mehr.
 
-Der Zeuge zeichnet den ganzen Text des Prüfpunkts einschließlich seiner Erweiterungszeilen (Index, Zeitanker) gegen. Er prüft deren Inhalt nicht, die Gegenzeichnung bindet sie nur an diesen Prüfpunkt. Ob ein Index vollständig aus dem Protokoll stammt, prüft der Beobachter (`../beobachter`).
+Der Zeuge zeichnet den ganzen Text des Prüfpunkts einschließlich seiner Erweiterungszeilen (Index, Zeitanker) gegen. Er prüft deren Inhalt nicht, die Gegenzeichnung bindet sie nur an diesen Prüfpunkt. Ob ein Index vollständig aus dem Protokoll stammt, prüft der Beobachter (`../beobachter`). Eine hashbasierte Signatur des Protokolls (SLH-DSA) steht hinter den Gegenzeichnungen und bleibt dem Zeugen unsichtbar.
 
 ## Grenzen
 

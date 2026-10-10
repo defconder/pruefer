@@ -1,7 +1,7 @@
 {
   "name": "defconder-pruefer",
-  "version": "0.3.0",
-  "description": "Offener Prüfer für manipulationssichere Beweispakete, Aussagen über das Protokoll, Entscheidungsnachweise und Prüfpunkte. Keine Abhängigkeiten.",
+  "version": "0.4.0",
+  "description": "Offener Prüfer für manipulationssichere Beweispakete, Aussagen, Zählprotokolle, Entscheidungsnachweise, Zeitbeweise, Stichproben, Freigabenachweise, Erneuerungen und Prüfpunkte, mit hashbasierter Signatur. Keine Abhängigkeiten.",
   "license": "Apache-2.0",
   "type": "module",
   "private": false,

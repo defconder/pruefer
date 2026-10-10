@@ -1,4 +1,5 @@
 import { hex, sha256Bytes } from "./merkle.js";
+import { slhPruefen, slhGroessen, SLH_KONTEXT } from "./slhdsa.js";
 
 const encoder = new TextEncoder();
 const EM_DASH = "\u2014";
@@ -6,6 +7,18 @@ const MAX_SIGNATURES = 32;
 
 export const TYP_ED25519 = 0x01;
 export const TYP_KOSIGNATUR = 0x04;
+export const TYP_SLH = 0xff;
+export const SLH_KENNUNGEN = { "defconder-slh-dsa-sha2-128s-1": "sha2-128s", "defconder-slh-dsa-sha2-128f-1": "sha2-128f" };
+
+function slhKennungFuer(verfahren) {
+  for (const [kennung, name] of Object.entries(SLH_KENNUNGEN)) if (name === verfahren) return kennung;
+  throw new Error("Unbekanntes hashbasiertes Verfahren.");
+}
+
+export function slhSchluesselBytes(verfahren, publicKey) {
+  const kennung = encoder.encode(slhKennungFuer(verfahren));
+  return concat(kennung, Uint8Array.of(0), publicKey);
+}
 
 export function base64Encode(bytes) {
   let text = "";
@@ -53,13 +66,30 @@ export async function schluesselLesen(text) {
   const daten = roh.slice(zweites + 1);
   if (!name || /\s/.test(name)) throw new Error("Ungültiger Schlüsselname.");
   const bytes = base64Decode(daten);
-  if (bytes.length !== 33) throw new Error("Nur Ed25519-Schlüssel werden unterstützt.");
   const typ = bytes[0];
+  if (typ === TYP_SLH) {
+    const ende = bytes.indexOf(0, 1);
+    if (ende < 0) throw new Error("Die Kennung des Verfahrens ist nicht abgeschlossen.");
+    const verfahren = SLH_KENNUNGEN[new TextDecoder().decode(bytes.slice(1, ende))];
+    if (!verfahren) throw new Error("Unbekanntes hashbasiertes Verfahren.");
+    const publicKey = bytes.slice(ende + 1);
+    if (publicKey.length !== slhGroessen(verfahren).oeffentlich) throw new Error("Der öffentliche Schlüssel hat die falsche Länge.");
+    const erwartetSlh = hex(await schluesselKennung(name, typ, bytes.slice(1)));
+    if (erwartetSlh !== kennungHex) throw new Error("Die Kennung passt nicht zum Schlüssel.");
+    return { name, typ, publicKey, verfahren, kennung: erwartetSlh };
+  }
+  if (bytes.length !== 33) throw new Error("Nur Ed25519-Schlüssel und hashbasierte Schlüssel werden unterstützt.");
   if (typ !== TYP_ED25519 && typ !== TYP_KOSIGNATUR) throw new Error("Unbekannter Signaturtyp.");
   const publicKey = bytes.slice(1);
   const erwartet = hex(await schluesselKennung(name, typ, publicKey));
   if (erwartet !== kennungHex) throw new Error("Die Kennung passt nicht zum Schlüssel.");
   return { name, typ, publicKey, kennung: erwartet };
+}
+
+export async function slhSchluesselText(name, verfahren, publicKey) {
+  const inhalt = slhSchluesselBytes(verfahren, publicKey);
+  const kennung = await schluesselKennung(name, TYP_SLH, inhalt);
+  return `${name}+${hex(kennung)}+${base64Encode(concat(Uint8Array.of(TYP_SLH), inhalt))}`;
 }
 
 export function notizLesen(text) {
@@ -131,6 +161,10 @@ export async function signaturenPruefen(notiz, vertraute) {
       const nachricht = encoder.encode(notiz.koerper);
       const ok = s.wert.length === 64 && (await ed25519Pruefen(schluessel.publicKey, nachricht, s.wert));
       if (ok) gueltig.push({ name: s.name, typ: schluessel.typ });
+      else fehlerhaft.push({ name: s.name, grund: "Signatur ungültig" });
+    } else if (schluessel.typ === TYP_SLH) {
+      const ok = slhPruefen(schluessel.verfahren, schluessel.publicKey, encoder.encode(notiz.koerper), s.wert, SLH_KONTEXT);
+      if (ok) gueltig.push({ name: s.name, typ: schluessel.typ, verfahren: schluessel.verfahren });
       else fehlerhaft.push({ name: s.name, grund: "Signatur ungültig" });
     } else if (schluessel.typ === TYP_KOSIGNATUR) {
       if (s.wert.length !== 72) {

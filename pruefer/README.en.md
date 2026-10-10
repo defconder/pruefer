@@ -29,8 +29,14 @@ It does not prove that an event in the log is true (only that it is there unalte
 | Evidence package | A file with its events, analyses and proofs. Events may be included as an **extract** with hidden fields, their hash stays verifiable. |
 | Statement about the log | Proves "there are exactly these events for this key" or "there are none". |
 | Decision proof | Proves that an access decision matched the rule that was published in the log. |
+| Count statement | A statement under index rules 2: proves the number of events of a type in a month without showing the events. |
 | Contradiction proof | Proves that the log signed two different roots for the same size. |
-| Checkpoint | The signed and cosigned state of the log, possibly with index and time anchor. |
+| Time proof | Proves through a proof in the OpenTimestamps format that a checkpoint existed at the latest at a Bitcoin block time. With the time anchor this gives a time corridor. |
+| Audit sample | Draws events with the randomness of a later Bitcoin block and checks them. States a bound on the share of violating events for error-free draws. |
+| Release proof, release report | Prove that a key was only handed out after a log entry, and that no key could be released for an object. |
+| Renewal | Proves that a checkpoint was renewed under a second scheme before the first counts as broken. |
+| Release of the verifier | Proves that `pruefer.html` comes from the holders of the release keys (Ed25519 and hash-based). |
+| Checkpoint | The signed and cosigned state of the log, possibly with index, time anchor and hash-based signature. |
 
 ## Quick start
 
@@ -40,6 +46,13 @@ node pruefer.mjs package.json original.pdf --bericht
 node pruefer.mjs package.json --log-schluessel "example.org/log+1a2b3c4d+AQ..." --zeugen-datei witnesses.txt --schwelle 2
 node pruefer.mjs aussage statement.json --log-schluessel "..." --zeugen-datei witnesses.txt --mindeststufe 2
 node pruefer.mjs entscheidung proof.json --log-schluessel "..." --bericht
+node pruefer.mjs aussage statement.json --log-schluessel "..." --log-schluessel-pq "..."
+node pruefer.mjs zeitbeweis timeproof.json --log-schluessel "..." --bericht
+node pruefer.mjs stichprobe sample.json --log-schluessel "..." --zeugen-datei witnesses.txt --mindestanzahl 400 --bericht
+node pruefer.mjs freigabe release.json --log-schluessel "..." --zeugen-datei witnesses.txt --hueter-datei custodians.txt --hueter-schwelle 2
+node pruefer.mjs freigabebericht report.json --hueter-datei custodians.txt --hueter-schwelle 2 --bericht
+node pruefer.mjs erneuerung renewal.json --log-schluessel "..." --erneuerungs-schluessel "..." --bruch ed25519=2035-01-01
+node pruefer.mjs release ausgabe/MANIFEST.json --release-schluessel "..." --release-schluessel "..." --datei pruefer.html
 node pruefer.mjs widerspruch proof.json --log-schluessel "..."
 node pruefer.mjs pruefpunkt checkpoint.txt --log-schluessel "..." --zeugen-datei witnesses.txt
 node pruefer.mjs konsistenz old.txt new.txt proof.json --log-schluessel "..."
@@ -63,10 +76,10 @@ python python/pruefen_vektoren.py
 cargo run --release --manifest-path rust/Cargo.toml -- testvektoren/testvektoren.json
 ```
 
-The vectors cover tree roots, more than three hundred consistency proofs, checkpoints with valid, missing and forged signatures, events of both formats with modifications, extracts, statements, time anchors and decision receipts. All three implementations pass them.
+The vectors cover tree roots, more than three hundred consistency proofs, checkpoints with valid, missing and forged signatures, events of both formats with modifications, extracts, statements, time anchors, decision receipts, hash-based signatures (vectors from an independent reference), OpenTimestamps proofs including a real proof from 2015, the drawing of the audit sample and index rules 2. All three implementations pass them. The full verification of the documents time proof, audit sample, release proof, renewal and release exists only in JavaScript.
 
 ## Limits
 
-Cosignatures use Ed25519, not the recommended ML-DSA-44, which browsers and the Node version used here do not offer yet. There is no eIDAS qualified timestamp. The Bitcoin time anchor proves "not earlier than", the witness cosignatures carry their own signed time. The verifier has had no independent security audit. A statement about the log holds for the index the operator fixed, whether it is complete can only be checked by recomputing it from the full log. A decision proof shows that the published rule was applied, not that the inputs or the rule are right.
+The witnesses' cosignatures use Ed25519 and are not quantum-safe. The log itself, the release and the links of a renewal can sign hash-based (SLH-DSA). C2SP knows the type 0x06 with ML-DSA-44 for cosignatures, which the verifier does not check. The page and the command line speak German only so far. There is no eIDAS qualified timestamp. The Bitcoin time anchor proves "not earlier than", the time proof "not later than", the witness cosignatures carry their own signed time. The verifier has had no independent security audit. A statement about the log holds for the index the operator fixed, whether it is complete can only be checked by recomputing it from the full log. A decision proof shows that the published rule was applied, not that the inputs or the rule are right.
 
 Report vulnerabilities confidentially to justautomatemore@jamoneai.de.

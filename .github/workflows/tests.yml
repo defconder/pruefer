@@ -26,6 +26,12 @@ jobs:
         run: |
           node pruefer/bauen-html.mjs
           git diff --exit-code pruefer/pruefer.html
+      - name: Unterschriebene Angaben zur Seite prüfen
+        run: |
+          node pruefer/pruefer.mjs release pruefer/ausgabe/MANIFEST.json \
+            --release-schluessel "$(sed -n 1p pruefer/ausgabe/SCHLUESSEL.txt)" \
+            --release-schluessel "$(sed -n 2p pruefer/ausgabe/SCHLUESSEL.txt)" \
+            --datei pruefer/pruefer.html
 
   python:
     name: Python

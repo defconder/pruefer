@@ -3,4 +3,7 @@ pub mod aussage;
 pub mod ereignis;
 pub mod merkle;
 pub mod note;
+pub mod ots;
 pub mod regeln;
+pub mod slhdsa;
+pub mod stichprobe;

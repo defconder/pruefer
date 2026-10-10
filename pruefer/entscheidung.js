@@ -34,7 +34,7 @@ export async function entscheidungPruefen(doc, opts = {}) {
     const festgelegt = Boolean(opts.logSchluessel);
     const logSchluessel = opts.logSchluessel ?? doc.logSchluessel;
     if (typeof logSchluessel !== "string") return abbruch("Es steht kein Schlüssel des Protokolls zur Verfügung.");
-    const punktErgebnis = await pruefpunktPruefen(doc.notiz, { ...opts, logSchluessel });
+    const punktErgebnis = opts.vorgepruefterPunkt ?? (await pruefpunktPruefen(doc.notiz, { ...opts, logSchluessel }));
     for (const c of punktErgebnis.checks) add(`punkt_${c.id}`, c.label, c.ok, c.detail);
     if (!punktErgebnis.punkt) return { ok: false, checks, warnungen, belege: [], stufe: 0, stufeText: "Nicht bestanden" };
     const punkt = punktErgebnis.punkt;
@@ -109,7 +109,7 @@ export async function entscheidungPruefen(doc, opts = {}) {
     const intern = checks.every((c) => c.ok);
     const { stufe, stufeText } = stufeBestimmen(intern, festgelegt, punktErgebnis);
     if (intern && Number.isInteger(opts.mindestStufe) && stufe < opts.mindestStufe) add("mindeststufe", `Mindestens Vertrauensstufe ${opts.mindestStufe} verlangt`, false, `erreicht ist Stufe ${stufe}`);
-    return { ok: checks.every((c) => c.ok), checks, warnungen, belege, stufe, stufeText: checks.every((c) => c.ok) ? stufeText : "Nicht bestanden", punkt };
+    return { ok: checks.every((c) => c.ok), checks, warnungen, belege, stufe, stufeText: checks.every((c) => c.ok) ? stufeText : "Nicht bestanden", punkt, pq: punktErgebnis.pq };
   } catch (err) {
     return abbruch(`Unerwarteter Fehler beim Prüfen: ${String(err?.message ?? err)}`);
   }

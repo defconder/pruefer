@@ -1,6 +1,6 @@
 # Bedrohungsmodell
 
-Fassung 0.3. Was der Prüfer abwehrt, was er nicht abwehrt, und was dafür vorausgesetzt wird. Englische Fassung: [THREAT_MODEL.en.md](THREAT_MODEL.en.md).
+Fassung 0.4. Was der Prüfer abwehrt, was er nicht abwehrt, und was dafür vorausgesetzt wird. Englische Fassung: [THREAT_MODEL.en.md](THREAT_MODEL.en.md).
 
 ## Was geschützt wird
 
@@ -19,6 +19,9 @@ Die Aussage: Ein Ereignis oder eine Datei stand zu einem Zeitpunkt in einem Prot
 | Betreiber, der in einer Aussage Ereignisse weglässt | "es gab keine Zugriffe" behaupten | nicht abgewehrt | nicht abgewehrt | nur durch Nachrechnen des Index mit dem vollständigen Protokoll abgewehrt |
 | Betreiber, der eine Entscheidung nach anderen Regeln trifft als veröffentlicht | Regeln heimlich ändern | nicht abgewehrt | nicht abgewehrt | abgewehrt für Entscheidungen mit Beleg, jede Regeländerung steht im Protokoll |
 | Wer ein Auszug-Dokument fälscht | verdeckte Felder austauschen | abgewehrt, die Prüfsumme des Ereignisses bindet sie | abgewehrt | abgewehrt |
+| Betreiber, der einen Zugriff gar nicht erst einträgt | Zugriffe ohne Eintrag | nicht abgewehrt | nicht abgewehrt | abgewehrt für Daten, die nur über Schlüsselhüter lesbar sind, solange weniger als die Schwelle der Hüter mit dem Betreiber zusammenarbeitet (Abschnitt 17), für alle anderen Daten **nicht abgewehrt** |
+| Wer nach dem Bruch von Ed25519 Prüfpunkte fälscht oder rückdatiert | Beweise im Quantenzeitalter fälschen | nicht abgewehrt | nicht abgewehrt | abgewehrt für die Signatur des Protokolls (hashbasierte Signatur, Abschnitt 13), für Rückdatierung durch Zeitbeweis und Erneuerung (Abschnitte 14 und 18). Die Gegenzeichnungen der Zeugen bleiben Ed25519. |
+| Betreiber, der nur einen Teil des Protokolls regelgerecht führt | Regelverstöße verbergen | nicht abgewehrt | nicht abgewehrt | durch die Stichprobe mit öffentlichem Zufall (Abschnitt 15) für häufige Verstöße mit beziffertem Anteil abgewehrt, einzelne seltene Verstöße finden Stichproben nicht |
 | Wer einen Zeitanker fälscht | ein Dokument älter aussehen lassen | teilweise, der Block muss die geforderte Rechenarbeit tragen | teilweise | teilweise, der Anker belegt "nicht früher als", nicht "nicht später als" |
 
 ## Annahmen, auf denen Stufe 2 ruht
@@ -26,7 +29,8 @@ Die Aussage: Ein Ereignis oder eine Datei stand zu einem Zeitpunkt in einem Prot
 1. Der Prüfer kennt den Protokollschlüssel und die Zeugenschlüssel auf einem Weg, den der Betreiber nicht kontrolliert (zum Beispiel auf Papier, über den Zeugen selbst, aus einer unabhängigen Veröffentlichung).
 2. Mindestens die geforderte Zahl von Zeugen ist **nicht** mit dem Betreiber im Bunde und wurde nicht kompromittiert. Verlangt der Prüfer zwei von drei, brauchen Betreiber und Angreifer zwei Zeugen.
 3. Der erste Stand, den ein Zeuge sieht, ist nicht schon verfälscht. Zeugen vertrauen beim ersten Mal dem Betreiber. Ein vor der ersten Gegenzeichnung umgeschriebenes Protokoll fällt nicht auf. Deshalb sollte der Betreiber Zeugen ab Inbetriebnahme verwenden.
-4. SHA-256 und Ed25519 bleiben sicher. Gegen Rechner mit Quantenvorteil schützt Ed25519 nicht.
+4. SHA-256 bleibt sicher. Ed25519 schützt nicht gegen einen künftigen Quantencomputer. Dagegen helfen die hashbasierte Signatur des Protokolls (Abschnitt 13), der Zeitbeweis (Abschnitt 14) und die Erneuerung (Abschnitt 18), die nur SHA-256 brauchen. Die Gegenzeichnungen der Zeugen bleiben Ed25519, Stufe 2 ist deshalb nicht in allen Teilen quantensicher.
+5. Für Zeitbeweise gilt die übliche Annahme, dass Bitcoin-Blockzeiten höchstens um etwa zwei Stunden abweichen und die Mehrheit der Miner richtige Uhren hat.
 
 ## Beobachter
 
@@ -36,12 +40,14 @@ Ein Beobachter holt den Prüfpunkt, prüft die Signatur, verlangt für jeden neu
 
 | Risiko | Gegenmaßnahme | Rest |
 |---|---|---|
-| Eine veränderte `pruefer.html` täuscht gute Ergebnisse vor | reproduzierbarer Bau, Prüfsumme, signiertes Manifest, Richtlinie gegen Netzverbindungen | Wer die Prüfsumme nicht vergleicht, trägt das Risiko. |
+| Eine veränderte `pruefer.html` täuscht gute Ergebnisse vor | reproduzierbarer Bau, Prüfsumme, mit Ed25519 und hashbasiert signiertes Manifest (Abschnitt 19), Richtlinie gegen Netzverbindungen | Wer die Prüfsumme nicht vergleicht, trägt das Risiko. |
 | Die Kennung des Betreibers kommt über denselben Kanal wie das Dokument | Kennung über einen zweiten Weg beschaffen | Das liegt beim Anwender. |
 | Zwei Umsetzungen berechnen die Prüfsumme der Ereignisse verschieden | Version 2 mit kanonischem JSON und Feldbaum, Testvektoren, drei Umsetzungen | Das alte Format hängt an `JSON.stringify` und wird nur noch geprüft. |
 | Absichtlich riesige oder verschachtelte Eingaben | Grenzen für Ereigniszahl, Beweislänge, Feldzahl und Baumgröße | Sehr große Pakete brauchen Speicher. |
-| Fehler in der Umsetzung | drei Umsetzungen in drei Sprachen gegen dieselben Testvektoren (von derselben Hand, eine Umsetzung durch Dritte steht aus), Zufallsprüfung, Aufzählung aller Baumgrößen bis 70 | Kein unabhängiges Audit. |
-| Zeitangaben | Gegenzeichnungen tragen die Zeit des Zeugen, Zeitanker die Blockzeit | Sie belegen "nicht früher als", nicht "nicht später als". Ein qualifizierter Zeitstempel ist nicht eingebaut. |
+| Fehler in der Umsetzung | drei Umsetzungen in drei Sprachen gegen dieselben Testvektoren (von derselben Hand, eine Umsetzung durch Dritte steht aus), hashbasierte Signaturen zusätzlich gegen eine unabhängige Referenz, Zeitbeweise gegen einen echten Beweis von 2015, Zufallsprüfung, Aufzählung aller Baumgrößen bis 70 | Kein unabhängiges Audit. Die vollständige Prüfung der Dokumente Zeitbeweis, Stichprobe, Freigabe, Erneuerung und Veröffentlichung gibt es nur in JavaScript. In allen drei Umsetzungen liegen die Auswertung von OpenTimestamps, die Ziehung der Stichprobe, die hashbasierte Signatur und die Indexregeln 2. |
+| Zeitangaben | Gegenzeichnungen tragen die Zeit des Zeugen, der Zeitanker die Untergrenze, der Zeitbeweis über OpenTimestamps die Obergrenze | Blockzeiten sind nur auf etwa zwei Stunden genau. Ein qualifizierter Zeitstempel ist nicht eingebaut. |
+| Die Hüter arbeiten zusammen oder einer von ihnen gibt eine falsche Auskunft | Schwelle `k` von `n`, Quittungen sind signiert und überführen einen Hüter, der sie verschweigt | Wer `k` Hüter für sich gewinnt, entschlüsselt ohne Eintrag. Wer den Klartext hat, kann ihn kopieren. Ein Eintrag steht erst im nächsten bezeugten Prüfpunkt. |
+| Die Stichprobe findet einen seltenen Verstoß nicht | beziffert den Anteil, nicht die Abwesenheit | Bei einer Million Ereignissen und 400 Ziehungen bleibt ein einzelner Verstoß mit Wahrscheinlichkeit 99,96 Prozent unentdeckt. |
 | Der Index lässt Ereignisse aus | Nachrechnen mit dem vollständigen Protokoll | Wer das Protokoll nicht sieht, kann es nicht nachrechnen. |
 | Der Prüfer erkennt ein Schlüsselfeld nicht | Schlüsselfelder stehen fest in den Indexregeln | Ein Ereignis, das seine Kennung in einem anderen Feld trägt, taucht unter diesem Schlüssel nicht auf. |
 | Die Eingaben einer Entscheidung waren falsch erfasst | keine, der Nachweis zeigt nur die Übereinstimmung mit der Regel | Der Nachweis sagt nichts über die fachliche Richtigkeit der Regel oder der Eingaben. |

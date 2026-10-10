@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-675RnrqVqk8uDI+B5FesJn7DB5PXeLgI6Y/oCkUIIoo='; style-src 'sha256-YHZnz8vw3vctS+GjA4Pu4McwJNQggE79ioeKZ0W724w='; img-src 'none'; font-src 'none'; connect-src 'none'; frame-src 'none'; object-src 'none'; media-src 'none'; worker-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-e29A6bXSX5Fq8iqtNwdBKA3X75Vxj2I3NESPRIM5xrI='; style-src 'sha256-YHZnz8vw3vctS+GjA4Pu4McwJNQggE79ioeKZ0W724w='; img-src 'none'; font-src 'none'; connect-src 'none'; frame-src 'none'; object-src 'none'; media-src 'none'; worker-src 'none'; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Defconder Beweisprüfer</title>
 <style>
@@ -45,21 +45,28 @@ code { overflow-wrap: anywhere; }
 <main>
 <div>
 <h1>Defconder Beweisprüfer</h1>
-<p>Prüft Beweispakete, Aussagen über das Protokoll, Entscheidungsnachweise, Widerspruchsbeweise und Prüfpunkte vollständig auf diesem Gerät. Die Seite darf technisch keine Verbindung ins Netz aufbauen, es werden keine Daten verschickt, und es braucht weder Netz noch Defconder.</p>
+<p>Prüft Beweispakete, Aussagen und Zählprotokolle, Entscheidungsnachweise, Widerspruchsbeweise, Zeitbeweise, Stichproben, Freigabenachweise, Beweiserneuerungen und Prüfpunkte vollständig auf diesem Gerät. Die Seite darf technisch keine Verbindung ins Netz aufbauen, es werden keine Daten verschickt, und es braucht weder Netz noch Defconder.</p>
 </div>
 <div class="card">
 <h2>Vertrauen festlegen (empfohlen)</h2>
 <p>Ein Dokument bringt seinen eigenen Schlüssel mit. Ohne festgelegte Schlüssel beweist die Prüfung nur, dass es in sich stimmig ist. Tragen Sie ein, was Sie auf anderem Weg vom Betreiber und von unabhängigen Zeugen erhalten haben.</p>
 <label>Schlüsselkennungen des Betreibers (eine je Zeile)<textarea id="kennungen" spellcheck="false" placeholder="a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6"></textarea></label>
 <label>Schlüssel des Protokolls<small>Form Name+Kennung+Daten</small><textarea id="logschluessel" spellcheck="false" placeholder="defconder.example/instanz+1a2b3c4d+AQ..."></textarea></label>
+<label>Hashbasierter Schlüssel des Protokolls (optional)<small>Verlangt zusätzlich eine Signatur, die auch ein künftiger Quantencomputer nicht fälschen kann.</small><textarea id="logschluesselpq" spellcheck="false" placeholder="defconder.example/instanz+9f8e7d6c+/w..."></textarea></label>
 <label>Schlüssel unabhängiger Zeugen (einer je Zeile)<textarea id="zeugen" spellcheck="false" placeholder="zeuge.example+5e6f7a8b+BA..."></textarea></label>
 <label>Mindestens gültige Gegenzeichnungen<input id="schwelle" type="number" min="1" value="2"></label>
 <label>Mindeststufe<small>Das Dokument gilt nur als bestanden, wenn mindestens diese Vertrauensstufe erreicht wird.</small><select id="mindeststufe"><option value="">keine Forderung</option><option value="1">Stufe 1, Schlüssel gebunden</option><option value="2">Stufe 2, bezeugt</option></select></label>
+<label>Schlüssel der Schlüsselhüter (einer je Zeile, für Freigabenachweise)<textarea id="hueter" spellcheck="false"></textarea></label>
+<label>Hüter, die zusammen einen Schlüssel freigeben können<input id="hueterschwelle" type="number" min="1"></label>
+<label>Schlüssel für Erneuerungen (einer je Zeile)<textarea id="erneuerungsschluessel" spellcheck="false"></textarea></label>
+<label>Angenommener Bruch eines Verfahrens (eine Angabe je Zeile, für Erneuerungen)<small>Form Verfahren=JJJJ-MM-TT, zum Beispiel ed25519=2035-01-01</small><textarea id="bruch" spellcheck="false"></textarea></label>
+<label>Mindestzahl der Ziehungen einer Stichprobe<input id="mindestanzahl" type="number" min="1"></label>
+<label>Mindestabstand des Zufalls in Blöcken<input id="mindestabstand" type="number" min="1"></label>
 <label>Mindestarbeit eines Zeitankers in Bit<small>Leer lassen für die Voreinstellung 64. Ein Bitcoin-Block mit weniger Arbeit beweist nichts.</small><input id="arbeit" type="number" min="0" max="200"></label>
 </div>
 <div class="card">
 <h2>Dokument prüfen</h2>
-<label>Beweispaket, Aussage, Entscheidungsnachweis oder Widerspruchsbeweis (.json)<input id="paket" type="file" accept=".json,application/json"></label>
+<label>Beweispaket, Aussage, Entscheidungsnachweis, Widerspruchsbeweis, Zeitbeweis, Stichprobe, Freigabenachweis oder Erneuerung (.json)<input id="paket" type="file" accept=".json,application/json"></label>
 <label>Originaldatei, falls das Beweispaket sie nicht enthält (optional)<input id="original" type="file"></label>
 <button id="los" disabled>Prüfen</button>
 </div>
@@ -205,8 +212,549 @@ async function verifyConsistency({ oldSize, newSize, oldRoot, newRoot, proof }) 
 return { MAX_BAUMGROESSE, hex, unhex, sha256Bytes, leafHashOfData, leafHash, hashChildren, emptyRoot, rootOfLeaves, verifyInclusion, verifyInclusionOfLeaf, verifyConsistency };
 })();
 
+const M_sha___sync_js = (() => {
+const K = new Uint32Array([
+  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+  0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+  0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+  0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3, 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+]);
+
+const START = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];
+const W = new Uint32Array(64);
+
+function block(h, daten, offset) {
+  for (let i = 0; i < 16; i += 1) {
+    const o = offset + i * 4;
+    W[i] = ((daten[o] << 24) | (daten[o + 1] << 16) | (daten[o + 2] << 8) | daten[o + 3]) >>> 0;
+  }
+  for (let i = 16; i < 64; i += 1) {
+    const a = W[i - 15];
+    const b = W[i - 2];
+    const s0 = ((a >>> 7) | (a << 25)) ^ ((a >>> 18) | (a << 14)) ^ (a >>> 3);
+    const s1 = ((b >>> 17) | (b << 15)) ^ ((b >>> 19) | (b << 13)) ^ (b >>> 10);
+    W[i] = (W[i - 16] + s0 + W[i - 7] + s1) >>> 0;
+  }
+  let a = h[0];
+  let b = h[1];
+  let c = h[2];
+  let d = h[3];
+  let e = h[4];
+  let f = h[5];
+  let g = h[6];
+  let hh = h[7];
+  for (let i = 0; i < 64; i += 1) {
+    const S1 = ((e >>> 6) | (e << 26)) ^ ((e >>> 11) | (e << 21)) ^ ((e >>> 25) | (e << 7));
+    const ch = (e & f) ^ (~e & g);
+    const t1 = (hh + S1 + ch + K[i] + W[i]) >>> 0;
+    const S0 = ((a >>> 2) | (a << 30)) ^ ((a >>> 13) | (a << 19)) ^ ((a >>> 22) | (a << 10));
+    const maj = (a & b) ^ (a & c) ^ (b & c);
+    const t2 = (S0 + maj) >>> 0;
+    hh = g;
+    g = f;
+    f = e;
+    e = (d + t1) >>> 0;
+    d = c;
+    c = b;
+    b = a;
+    a = (t1 + t2) >>> 0;
+  }
+  h[0] = (h[0] + a) >>> 0;
+  h[1] = (h[1] + b) >>> 0;
+  h[2] = (h[2] + c) >>> 0;
+  h[3] = (h[3] + d) >>> 0;
+  h[4] = (h[4] + e) >>> 0;
+  h[5] = (h[5] + f) >>> 0;
+  h[6] = (h[6] + g) >>> 0;
+  h[7] = (h[7] + hh) >>> 0;
+}
+
+function sha256Sync(daten) {
+  const h = Uint32Array.from(START);
+  const laenge = daten.length;
+  const volle = laenge - (laenge % 64);
+  for (let o = 0; o < volle; o += 64) block(h, daten, o);
+  const rest = laenge - volle;
+  const ende = new Uint8Array(rest < 56 ? 64 : 128);
+  ende.set(daten.subarray(volle));
+  ende[rest] = 0x80;
+  const bits = BigInt(laenge) * 8n;
+  const dv = new DataView(ende.buffer);
+  dv.setUint32(ende.length - 8, Number(bits >> 32n), false);
+  dv.setUint32(ende.length - 4, Number(bits & 0xffffffffn), false);
+  for (let o = 0; o < ende.length; o += 64) block(h, ende, o);
+  const out = new Uint8Array(32);
+  const ov = new DataView(out.buffer);
+  for (let i = 0; i < 8; i += 1) ov.setUint32(i * 4, h[i], false);
+  return out;
+}
+
+return { sha256Sync };
+})();
+
+const M_slhdsa_js = (() => {
+const { sha256Sync } = M_sha___sync_js;
+
+const WOTS_HASH = 0;
+const WOTS_PK = 1;
+const TREE = 2;
+const FORS_TREE = 3;
+const FORS_ROOTS = 4;
+const WOTS_PRF = 5;
+const FORS_PRF = 6;
+
+const SLH_PARAMETER = {
+  "sha2-128s": { n: 16, h: 63, d: 7, hp: 9, a: 12, k: 14, lgW: 4 },
+  "sha2-128f": { n: 16, h: 66, d: 22, hp: 3, a: 6, k: 33, lgW: 4 },
+};
+
+const SLH_KONTEXT = "defconder-pruefpunkt-1";
+
+function ableiten(p) {
+  const w = 1 << p.lgW;
+  const len1 = Math.ceil((8 * p.n) / p.lgW);
+  const len2 = Math.floor(Math.log2(len1 * (w - 1)) / p.lgW) + 1;
+  const len = len1 + len2;
+  const mdBytes = Math.ceil((p.k * p.a) / 8);
+  const baumBits = p.h - p.hp;
+  const baumBytes = Math.ceil(baumBits / 8);
+  const blattBytes = Math.ceil(p.hp / 8);
+  const forsBytes = p.k * (p.a + 1) * p.n;
+  const xmssBytes = (len + p.hp) * p.n;
+  return { ...p, w, len1, len2, len, mdBytes, baumBits, baumBytes, blattBytes, m: mdBytes + baumBytes + blattBytes, forsBytes, xmssBytes, signaturBytes: p.n + forsBytes + p.d * xmssBytes, oeffentlichBytes: 2 * p.n, geheimBytes: 4 * p.n };
+}
+
+function slhGroessen(name) {
+  const p = SLH_PARAMETER[name];
+  if (!p) throw new Error("Unbekannter SLH-DSA-Parametersatz.");
+  const g = ableiten(p);
+  return { signatur: g.signaturBytes, oeffentlich: g.oeffentlichBytes, geheim: g.geheimBytes, saat: 3 * p.n };
+}
+
+function verbinden(...teile) {
+  const out = new Uint8Array(teile.reduce((n, t) => n + t.length, 0));
+  let o = 0;
+  for (const t of teile) {
+    out.set(t, o);
+    o += t.length;
+  }
+  return out;
+}
+
+function gleich(a, b) {
+  if (a.length !== b.length) return false;
+  let rest = 0;
+  for (let i = 0; i < a.length; i += 1) rest |= a[i] ^ b[i];
+  return rest === 0;
+}
+
+function hmacSha256(sha, schluessel, daten) {
+  const k = new Uint8Array(64);
+  k.set(schluessel.length > 64 ? sha(schluessel) : schluessel);
+  const innen = new Uint8Array(64);
+  const aussen = new Uint8Array(64);
+  for (let i = 0; i < 64; i += 1) {
+    innen[i] = k[i] ^ 0x36;
+    aussen[i] = k[i] ^ 0x5c;
+  }
+  return sha(verbinden(aussen, sha(verbinden(innen, daten))));
+}
+
+function mgf1(sha, saat, laenge) {
+  const teile = [];
+  let gesamt = 0;
+  for (let zaehler = 0; gesamt < laenge; zaehler += 1) {
+    const c = new Uint8Array(4);
+    new DataView(c.buffer).setUint32(0, zaehler, false);
+    const block = sha(verbinden(saat, c));
+    teile.push(block);
+    gesamt += block.length;
+  }
+  return verbinden(...teile).subarray(0, laenge);
+}
+
+function base2b(x, b, ausgabe) {
+  const out = new Array(ausgabe);
+  let pos = 0;
+  let bits = 0;
+  let summe = 0;
+  const maske = (1 << b) - 1;
+  for (let i = 0; i < ausgabe; i += 1) {
+    while (bits < b) {
+      summe = ((summe << 8) | x[pos]) >>> 0;
+      pos += 1;
+      bits += 8;
+    }
+    bits -= b;
+    out[i] = (summe >>> bits) & maske;
+    summe &= (1 << bits) - 1;
+  }
+  return out;
+}
+
+function neueAdrs() {
+  return new Uint8Array(32);
+}
+
+function kopie(adrs) {
+  return Uint8Array.from(adrs);
+}
+
+function setSchicht(adrs, v) {
+  adrs[0] = 0;
+  adrs[1] = 0;
+  adrs[2] = 0;
+  adrs[3] = v;
+}
+
+function setBaum(adrs, t) {
+  let rest = t;
+  for (let i = 15; i >= 4; i -= 1) {
+    adrs[i] = Number(rest & 0xffn);
+    rest >>= 8n;
+  }
+}
+
+function setTypLeeren(adrs, typ) {
+  adrs[16] = 0;
+  adrs[17] = 0;
+  adrs[18] = 0;
+  adrs[19] = typ;
+  adrs.fill(0, 20, 32);
+}
+
+function setWort(adrs, offset, v) {
+  new DataView(adrs.buffer, adrs.byteOffset, 32).setUint32(offset, v, false);
+}
+
+function getWort(adrs, offset) {
+  return new DataView(adrs.buffer, adrs.byteOffset, 32).getUint32(offset, false);
+}
+
+const setSchluesselpaar = (adrs, v) => setWort(adrs, 20, v);
+const getSchluesselpaar = (adrs) => getWort(adrs, 20);
+const setKette = (adrs, v) => setWort(adrs, 24, v);
+const setHash = (adrs, v) => setWort(adrs, 28, v);
+const setHoehe = (adrs, v) => setWort(adrs, 24, v);
+const setIndex = (adrs, v) => setWort(adrs, 28, v);
+
+function komprimiert(adrs) {
+  const out = new Uint8Array(22);
+  out[0] = adrs[3];
+  out.set(adrs.subarray(8, 16), 1);
+  out[9] = adrs[19];
+  out.set(adrs.subarray(20, 32), 10);
+  return out;
+}
+
+function kontextFuer(g, pkSeed, anbieter) {
+  const sha = anbieter.sha256;
+  const praefix = verbinden(pkSeed, new Uint8Array(64 - g.n));
+  const gehasht = anbieter.mitPraefix ? anbieter.mitPraefix(praefix) : (d) => sha(verbinden(praefix, d));
+  const kurz = (d) => gehasht(d).subarray(0, g.n);
+  return {
+    sha,
+    F: (adrs, m) => kurz(verbinden(komprimiert(adrs), m)),
+    H: (adrs, m) => kurz(verbinden(komprimiert(adrs), m)),
+    T: (adrs, m) => kurz(verbinden(komprimiert(adrs), m)),
+    PRF: (skSeed, adrs) => kurz(verbinden(komprimiert(adrs), skSeed)),
+  };
+}
+
+function kette(g, c, x, i, s, adrs) {
+  let tmp = x;
+  for (let j = i; j < i + s; j += 1) {
+    setHash(adrs, j);
+    tmp = c.F(adrs, tmp);
+  }
+  return tmp;
+}
+
+function wotsZiffern(g, m) {
+  const msg = base2b(m, g.lgW, g.len1);
+  let pruef = 0;
+  for (const z of msg) pruef += g.w - 1 - z;
+  pruef <<= (8 - ((g.len2 * g.lgW) % 8)) % 8;
+  const pruefBytes = Math.ceil((g.len2 * g.lgW) / 8);
+  const pb = new Uint8Array(pruefBytes);
+  for (let i = 0; i < pruefBytes; i += 1) pb[pruefBytes - 1 - i] = (pruef >>> (8 * i)) & 0xff;
+  return msg.concat(base2b(pb, g.lgW, g.len2));
+}
+
+function wotsPkAusSignatur(g, c, sig, m, pkSeed, adrs) {
+  const ziffern = wotsZiffern(g, m);
+  const teile = [];
+  for (let i = 0; i < g.len; i += 1) {
+    setKette(adrs, i);
+    teile.push(kette(g, c, sig.subarray(i * g.n, (i + 1) * g.n), ziffern[i], g.w - 1 - ziffern[i], adrs));
+  }
+  const wotsPk = kopie(adrs);
+  setTypLeeren(wotsPk, WOTS_PK);
+  setSchluesselpaar(wotsPk, getSchluesselpaar(adrs));
+  return c.T(wotsPk, verbinden(...teile));
+}
+
+function wotsSchluessel(g, c, skSeed, adrs, i) {
+  const skAdrs = kopie(adrs);
+  setTypLeeren(skAdrs, WOTS_PRF);
+  setSchluesselpaar(skAdrs, getSchluesselpaar(adrs));
+  setKette(skAdrs, i);
+  setHash(skAdrs, 0);
+  return c.PRF(skSeed, skAdrs);
+}
+
+function wotsPkErzeugen(g, c, skSeed, adrs) {
+  const teile = [];
+  for (let i = 0; i < g.len; i += 1) {
+    const sk = wotsSchluessel(g, c, skSeed, adrs, i);
+    setKette(adrs, i);
+    teile.push(kette(g, c, sk, 0, g.w - 1, adrs));
+  }
+  const wotsPk = kopie(adrs);
+  setTypLeeren(wotsPk, WOTS_PK);
+  setSchluesselpaar(wotsPk, getSchluesselpaar(adrs));
+  return c.T(wotsPk, verbinden(...teile));
+}
+
+function wotsSignieren(g, c, m, skSeed, adrs) {
+  const ziffern = wotsZiffern(g, m);
+  const teile = [];
+  for (let i = 0; i < g.len; i += 1) {
+    const sk = wotsSchluessel(g, c, skSeed, adrs, i);
+    setKette(adrs, i);
+    teile.push(kette(g, c, sk, 0, ziffern[i], adrs));
+  }
+  return verbinden(...teile);
+}
+
+function xmssKnoten(g, c, skSeed, i, z, adrs) {
+  if (z === 0) {
+    setTypLeeren(adrs, WOTS_HASH);
+    setSchluesselpaar(adrs, i);
+    return wotsPkErzeugen(g, c, skSeed, adrs);
+  }
+  const links = xmssKnoten(g, c, skSeed, 2 * i, z - 1, adrs);
+  const rechts = xmssKnoten(g, c, skSeed, 2 * i + 1, z - 1, adrs);
+  setTypLeeren(adrs, TREE);
+  setHoehe(adrs, z);
+  setIndex(adrs, i);
+  return c.H(adrs, verbinden(links, rechts));
+}
+
+function xmssSignieren(g, c, m, skSeed, idx, adrs) {
+  const auth = [];
+  for (let j = 0; j < g.hp; j += 1) auth.push(xmssKnoten(g, c, skSeed, (idx >> j) ^ 1, j, adrs));
+  setTypLeeren(adrs, WOTS_HASH);
+  setSchluesselpaar(adrs, idx);
+  return verbinden(wotsSignieren(g, c, m, skSeed, adrs), ...auth);
+}
+
+function xmssPkAusSignatur(g, c, idx, sig, m, pkSeed, adrs) {
+  setTypLeeren(adrs, WOTS_HASH);
+  setSchluesselpaar(adrs, idx);
+  let knoten = wotsPkAusSignatur(g, c, sig.subarray(0, g.len * g.n), m, pkSeed, adrs);
+  setTypLeeren(adrs, TREE);
+  setIndex(adrs, idx);
+  let baumIndex = idx;
+  for (let k = 0; k < g.hp; k += 1) {
+    setHoehe(adrs, k + 1);
+    baumIndex >>= 1;
+    setIndex(adrs, baumIndex);
+    const nachbar = sig.subarray((g.len + k) * g.n, (g.len + k + 1) * g.n);
+    knoten = ((idx >> k) & 1) === 0 ? c.H(adrs, verbinden(knoten, nachbar)) : c.H(adrs, verbinden(nachbar, knoten));
+  }
+  return knoten;
+}
+
+function htSignieren(g, c, m, skSeed, idxBaum, idxBlatt) {
+  const adrs = neueAdrs();
+  setBaum(adrs, idxBaum);
+  const teile = [];
+  let sig = xmssSignieren(g, c, m, skSeed, idxBlatt, adrs);
+  teile.push(sig);
+  let wurzel = xmssPkAusSignatur(g, c, idxBlatt, sig, m, null, adrs);
+  let baum = idxBaum;
+  for (let j = 1; j < g.d; j += 1) {
+    const blatt = Number(baum & BigInt((1 << g.hp) - 1));
+    baum >>= BigInt(g.hp);
+    setSchicht(adrs, j);
+    setBaum(adrs, baum);
+    sig = xmssSignieren(g, c, wurzel, skSeed, blatt, adrs);
+    teile.push(sig);
+    if (j < g.d - 1) wurzel = xmssPkAusSignatur(g, c, blatt, sig, wurzel, null, adrs);
+  }
+  return verbinden(...teile);
+}
+
+function htPruefen(g, c, m, sig, idxBaum, idxBlatt, pkWurzel) {
+  const adrs = neueAdrs();
+  setBaum(adrs, idxBaum);
+  let knoten = xmssPkAusSignatur(g, c, idxBlatt, sig.subarray(0, g.xmssBytes), m, null, adrs);
+  let baum = idxBaum;
+  for (let j = 1; j < g.d; j += 1) {
+    const blatt = Number(baum & BigInt((1 << g.hp) - 1));
+    baum >>= BigInt(g.hp);
+    setSchicht(adrs, j);
+    setBaum(adrs, baum);
+    knoten = xmssPkAusSignatur(g, c, blatt, sig.subarray(j * g.xmssBytes, (j + 1) * g.xmssBytes), knoten, null, adrs);
+  }
+  return gleich(knoten, pkWurzel);
+}
+
+function forsSchluessel(g, c, skSeed, adrs, idx) {
+  const skAdrs = kopie(adrs);
+  setTypLeeren(skAdrs, FORS_PRF);
+  setSchluesselpaar(skAdrs, getSchluesselpaar(adrs));
+  setIndex(skAdrs, idx);
+  return c.PRF(skSeed, skAdrs);
+}
+
+function forsKnoten(g, c, skSeed, i, z, adrs) {
+  if (z === 0) {
+    const sk = forsSchluessel(g, c, skSeed, adrs, i);
+    setHoehe(adrs, 0);
+    setIndex(adrs, i);
+    return c.F(adrs, sk);
+  }
+  const links = forsKnoten(g, c, skSeed, 2 * i, z - 1, adrs);
+  const rechts = forsKnoten(g, c, skSeed, 2 * i + 1, z - 1, adrs);
+  setHoehe(adrs, z);
+  setIndex(adrs, i);
+  return c.H(adrs, verbinden(links, rechts));
+}
+
+function forsSignieren(g, c, md, skSeed, adrs) {
+  const indizes = base2b(md, g.a, g.k);
+  const teile = [];
+  for (let i = 0; i < g.k; i += 1) {
+    teile.push(forsSchluessel(g, c, skSeed, adrs, i * (1 << g.a) + indizes[i]));
+    for (let j = 0; j < g.a; j += 1) {
+      const s = (indizes[i] >> j) ^ 1;
+      teile.push(forsKnoten(g, c, skSeed, i * (1 << (g.a - j)) + s, j, adrs));
+    }
+  }
+  return verbinden(...teile);
+}
+
+function forsPkAusSignatur(g, c, sig, md, adrs) {
+  const indizes = base2b(md, g.a, g.k);
+  const wurzeln = [];
+  const schritt = (g.a + 1) * g.n;
+  for (let i = 0; i < g.k; i += 1) {
+    const teil = sig.subarray(i * schritt, (i + 1) * schritt);
+    setHoehe(adrs, 0);
+    let baumIndex = i * (1 << g.a) + indizes[i];
+    setIndex(adrs, baumIndex);
+    let knoten = c.F(adrs, teil.subarray(0, g.n));
+    for (let j = 0; j < g.a; j += 1) {
+      setHoehe(adrs, j + 1);
+      baumIndex >>= 1;
+      setIndex(adrs, baumIndex);
+      const nachbar = teil.subarray((j + 1) * g.n, (j + 2) * g.n);
+      knoten = ((indizes[i] >> j) & 1) === 0 ? c.H(adrs, verbinden(knoten, nachbar)) : c.H(adrs, verbinden(nachbar, knoten));
+    }
+    wurzeln.push(knoten);
+  }
+  const forsPk = kopie(adrs);
+  setTypLeeren(forsPk, FORS_ROOTS);
+  setSchluesselpaar(forsPk, getSchluesselpaar(adrs));
+  return c.T(forsPk, verbinden(...wurzeln));
+}
+
+function zerlegen(g, digest) {
+  const md = digest.subarray(0, g.mdBytes);
+  let baum = 0n;
+  for (const b of digest.subarray(g.mdBytes, g.mdBytes + g.baumBytes)) baum = (baum << 8n) | BigInt(b);
+  baum &= (1n << BigInt(g.baumBits)) - 1n;
+  let blatt = 0;
+  for (const b of digest.subarray(g.mdBytes + g.baumBytes, g.mdBytes + g.baumBytes + g.blattBytes)) blatt = blatt * 256 + b;
+  blatt %= 1 << g.hp;
+  return { md, baum, blatt };
+}
+
+function nachrichtVerpacken(nachricht, kontext) {
+  const ctx = typeof kontext === "string" ? new TextEncoder().encode(kontext) : kontext;
+  if (ctx.length > 255) throw new Error("Der Kontext ist zu lang.");
+  return verbinden(Uint8Array.of(0, ctx.length), ctx, nachricht);
+}
+
+function parameterFuer(name) {
+  const p = SLH_PARAMETER[name];
+  if (!p) throw new Error("Unbekannter SLH-DSA-Parametersatz.");
+  return ableiten(p);
+}
+
+const STANDARD_ANBIETER = { sha256: sha256Sync };
+
+function slhSchluesselpaar(name, saat, anbieter = STANDARD_ANBIETER) {
+  const g = parameterFuer(name);
+  if (!(saat instanceof Uint8Array) || saat.length !== 3 * g.n) throw new Error("Die Saat hat die falsche Länge.");
+  const skSeed = saat.slice(0, g.n);
+  const skPrf = saat.slice(g.n, 2 * g.n);
+  const pkSeed = saat.slice(2 * g.n, 3 * g.n);
+  const c = kontextFuer(g, pkSeed, anbieter);
+  const adrs = neueAdrs();
+  setSchicht(adrs, g.d - 1);
+  const wurzel = xmssKnoten(g, c, skSeed, 0, g.hp, adrs);
+  return { oeffentlich: verbinden(pkSeed, wurzel), geheim: verbinden(skSeed, skPrf, pkSeed, wurzel) };
+}
+
+function slhSignieren(name, geheim, nachricht, kontext = SLH_KONTEXT, zufall = null, anbieter = STANDARD_ANBIETER) {
+  const g = parameterFuer(name);
+  if (!(geheim instanceof Uint8Array) || geheim.length !== 4 * g.n) throw new Error("Der geheime Schlüssel hat die falsche Länge.");
+  const skSeed = geheim.subarray(0, g.n);
+  const skPrf = geheim.subarray(g.n, 2 * g.n);
+  const pkSeed = geheim.subarray(2 * g.n, 3 * g.n);
+  const pkWurzel = geheim.subarray(3 * g.n, 4 * g.n);
+  const c = kontextFuer(g, pkSeed, anbieter);
+  const m = nachrichtVerpacken(nachricht, kontext);
+  const optRand = zufall ?? pkSeed;
+  const r = hmacSha256(anbieter.sha256, skPrf, verbinden(optRand, m)).subarray(0, g.n);
+  const innen = anbieter.sha256(verbinden(r, pkSeed, pkWurzel, m));
+  const digest = mgf1(anbieter.sha256, verbinden(r, pkSeed, innen), g.m);
+  const { md, baum, blatt } = zerlegen(g, digest);
+  const adrs = neueAdrs();
+  setBaum(adrs, baum);
+  setTypLeeren(adrs, FORS_TREE);
+  setSchluesselpaar(adrs, blatt);
+  const forsSig = forsSignieren(g, c, md, skSeed, adrs);
+  const forsPk = forsPkAusSignatur(g, c, forsSig, md, adrs);
+  const htSig = htSignieren(g, c, forsPk, skSeed, baum, blatt);
+  return verbinden(r, forsSig, htSig);
+}
+
+function slhPruefen(name, oeffentlich, nachricht, signatur, kontext = SLH_KONTEXT, anbieter = STANDARD_ANBIETER) {
+  try {
+    const g = parameterFuer(name);
+    if (!(oeffentlich instanceof Uint8Array) || oeffentlich.length !== 2 * g.n) return false;
+    if (!(signatur instanceof Uint8Array) || signatur.length !== g.signaturBytes) return false;
+    const pkSeed = oeffentlich.subarray(0, g.n);
+    const pkWurzel = oeffentlich.subarray(g.n, 2 * g.n);
+    const c = kontextFuer(g, pkSeed, anbieter);
+    const m = nachrichtVerpacken(nachricht, kontext);
+    const r = signatur.subarray(0, g.n);
+    const forsSig = signatur.subarray(g.n, g.n + g.forsBytes);
+    const htSig = signatur.subarray(g.n + g.forsBytes);
+    const innen = anbieter.sha256(verbinden(r, pkSeed, pkWurzel, m));
+    const digest = mgf1(anbieter.sha256, verbinden(r, pkSeed, innen), g.m);
+    const { md, baum, blatt } = zerlegen(g, digest);
+    const adrs = neueAdrs();
+    setBaum(adrs, baum);
+    setTypLeeren(adrs, FORS_TREE);
+    setSchluesselpaar(adrs, blatt);
+    const forsPk = forsPkAusSignatur(g, c, forsSig, md, adrs);
+    return htPruefen(g, c, forsPk, htSig, baum, blatt, pkWurzel);
+  } catch {
+    return false;
+  }
+}
+
+return { SLH_PARAMETER, SLH_KONTEXT, slhGroessen, slhSchluesselpaar, slhSignieren, slhPruefen };
+})();
+
 const M_note_js = (() => {
 const { hex, sha256Bytes } = M_merkle_js;
+const { slhPruefen, slhGroessen, SLH_KONTEXT } = M_slhdsa_js;
 
 const encoder = new TextEncoder();
 const EM_DASH = "\u2014";
@@ -214,6 +762,18 @@ const MAX_SIGNATURES = 32;
 
 const TYP_ED25519 = 0x01;
 const TYP_KOSIGNATUR = 0x04;
+const TYP_SLH = 0xff;
+const SLH_KENNUNGEN = { "defconder-slh-dsa-sha2-128s-1": "sha2-128s", "defconder-slh-dsa-sha2-128f-1": "sha2-128f" };
+
+function slhKennungFuer(verfahren) {
+  for (const [kennung, name] of Object.entries(SLH_KENNUNGEN)) if (name === verfahren) return kennung;
+  throw new Error("Unbekanntes hashbasiertes Verfahren.");
+}
+
+function slhSchluesselBytes(verfahren, publicKey) {
+  const kennung = encoder.encode(slhKennungFuer(verfahren));
+  return concat(kennung, Uint8Array.of(0), publicKey);
+}
 
 function base64Encode(bytes) {
   let text = "";
@@ -261,13 +821,30 @@ async function schluesselLesen(text) {
   const daten = roh.slice(zweites + 1);
   if (!name || /\s/.test(name)) throw new Error("Ungültiger Schlüsselname.");
   const bytes = base64Decode(daten);
-  if (bytes.length !== 33) throw new Error("Nur Ed25519-Schlüssel werden unterstützt.");
   const typ = bytes[0];
+  if (typ === TYP_SLH) {
+    const ende = bytes.indexOf(0, 1);
+    if (ende < 0) throw new Error("Die Kennung des Verfahrens ist nicht abgeschlossen.");
+    const verfahren = SLH_KENNUNGEN[new TextDecoder().decode(bytes.slice(1, ende))];
+    if (!verfahren) throw new Error("Unbekanntes hashbasiertes Verfahren.");
+    const publicKey = bytes.slice(ende + 1);
+    if (publicKey.length !== slhGroessen(verfahren).oeffentlich) throw new Error("Der öffentliche Schlüssel hat die falsche Länge.");
+    const erwartetSlh = hex(await schluesselKennung(name, typ, bytes.slice(1)));
+    if (erwartetSlh !== kennungHex) throw new Error("Die Kennung passt nicht zum Schlüssel.");
+    return { name, typ, publicKey, verfahren, kennung: erwartetSlh };
+  }
+  if (bytes.length !== 33) throw new Error("Nur Ed25519-Schlüssel und hashbasierte Schlüssel werden unterstützt.");
   if (typ !== TYP_ED25519 && typ !== TYP_KOSIGNATUR) throw new Error("Unbekannter Signaturtyp.");
   const publicKey = bytes.slice(1);
   const erwartet = hex(await schluesselKennung(name, typ, publicKey));
   if (erwartet !== kennungHex) throw new Error("Die Kennung passt nicht zum Schlüssel.");
   return { name, typ, publicKey, kennung: erwartet };
+}
+
+async function slhSchluesselText(name, verfahren, publicKey) {
+  const inhalt = slhSchluesselBytes(verfahren, publicKey);
+  const kennung = await schluesselKennung(name, TYP_SLH, inhalt);
+  return `${name}+${hex(kennung)}+${base64Encode(concat(Uint8Array.of(TYP_SLH), inhalt))}`;
 }
 
 function notizLesen(text) {
@@ -340,6 +917,10 @@ async function signaturenPruefen(notiz, vertraute) {
       const ok = s.wert.length === 64 && (await ed25519Pruefen(schluessel.publicKey, nachricht, s.wert));
       if (ok) gueltig.push({ name: s.name, typ: schluessel.typ });
       else fehlerhaft.push({ name: s.name, grund: "Signatur ungültig" });
+    } else if (schluessel.typ === TYP_SLH) {
+      const ok = slhPruefen(schluessel.verfahren, schluessel.publicKey, encoder.encode(notiz.koerper), s.wert, SLH_KONTEXT);
+      if (ok) gueltig.push({ name: s.name, typ: schluessel.typ, verfahren: schluessel.verfahren });
+      else fehlerhaft.push({ name: s.name, grund: "Signatur ungültig" });
     } else if (schluessel.typ === TYP_KOSIGNATUR) {
       if (s.wert.length !== 72) {
         fehlerhaft.push({ name: s.name, grund: "Signaturlänge ungültig" });
@@ -355,7 +936,83 @@ async function signaturenPruefen(notiz, vertraute) {
   return { gueltig, fehlerhaft };
 }
 
-return { TYP_ED25519, TYP_KOSIGNATUR, base64Encode, base64Decode, schluesselKennung, schluesselText, schluesselLesen, notizLesen, pruefpunktLesen, pruefpunktText, signaturenPruefen };
+return { TYP_ED25519, TYP_KOSIGNATUR, TYP_SLH, SLH_KENNUNGEN, slhSchluesselBytes, base64Encode, base64Decode, schluesselKennung, schluesselText, schluesselLesen, slhSchluesselText, notizLesen, pruefpunktLesen, pruefpunktText, signaturenPruefen };
+})();
+
+const M_ripemd____js = (() => {
+const R1 = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 7, 4, 13, 1, 10, 6, 15, 3, 12, 0, 9, 5, 2, 14, 11, 8, 3, 10, 14, 4, 9, 15, 8, 1, 2, 7, 0, 6, 13, 11, 5, 12, 1, 9, 11, 10, 0, 8, 12, 4, 13, 3, 7, 15, 14, 5, 6, 2, 4, 0, 5, 9, 7, 12, 2, 10, 14, 1, 3, 8, 11, 6, 15, 13];
+const R2 = [5, 14, 7, 0, 9, 2, 11, 4, 13, 6, 15, 8, 1, 10, 3, 12, 6, 11, 3, 7, 0, 13, 5, 10, 14, 15, 8, 12, 4, 9, 1, 2, 15, 5, 1, 3, 7, 14, 6, 9, 11, 8, 12, 2, 10, 0, 4, 13, 8, 6, 4, 1, 3, 11, 15, 0, 5, 12, 2, 13, 9, 7, 10, 14, 12, 15, 10, 4, 1, 5, 8, 7, 6, 2, 13, 14, 0, 3, 9, 11];
+const S1 = [11, 14, 15, 12, 5, 8, 7, 9, 11, 13, 14, 15, 6, 7, 9, 8, 7, 6, 8, 13, 11, 9, 7, 15, 7, 12, 15, 9, 11, 7, 13, 12, 11, 13, 6, 7, 14, 9, 13, 15, 14, 8, 13, 6, 5, 12, 7, 5, 11, 12, 14, 15, 14, 15, 9, 8, 9, 14, 5, 6, 8, 6, 5, 12, 9, 15, 5, 11, 6, 8, 13, 12, 5, 12, 13, 14, 11, 8, 5, 6];
+const S2 = [8, 9, 9, 11, 13, 15, 15, 5, 7, 7, 8, 11, 14, 14, 12, 6, 9, 13, 15, 7, 12, 8, 9, 11, 7, 7, 12, 7, 6, 15, 13, 11, 9, 7, 15, 11, 8, 6, 6, 14, 12, 13, 5, 14, 13, 13, 7, 5, 15, 5, 8, 11, 14, 14, 6, 14, 6, 9, 12, 9, 12, 5, 15, 8, 8, 5, 12, 9, 12, 5, 14, 6, 8, 13, 6, 5, 15, 13, 11, 11];
+const K1 = [0x00000000, 0x5a827999, 0x6ed9eba1, 0x8f1bbcdc, 0xa953fd4e];
+const K2 = [0x50a28be6, 0x5c4dd124, 0x6d703ef3, 0x7a6d76e9, 0x00000000];
+
+function rol(x, n) {
+  return ((x << n) | (x >>> (32 - n))) >>> 0;
+}
+
+function funktion(j, x, y, z) {
+  if (j < 16) return (x ^ y ^ z) >>> 0;
+  if (j < 32) return ((x & y) | (~x & z)) >>> 0;
+  if (j < 48) return ((x | ~y) ^ z) >>> 0;
+  if (j < 64) return ((x & z) | (y & ~z)) >>> 0;
+  return (x ^ (y | ~z)) >>> 0;
+}
+
+function ripemd160(daten) {
+  const h = [0x67452301, 0xefcdab89, 0x98badcfe, 0x10325476, 0xc3d2e1f0];
+  const laenge = daten.length;
+  const rest = laenge % 64;
+  const auffuellung = rest < 56 ? 64 - rest : 128 - rest;
+  const voll = new Uint8Array(laenge + auffuellung);
+  voll.set(daten);
+  voll[laenge] = 0x80;
+  const ansicht = new DataView(voll.buffer);
+  const bits = BigInt(laenge) * 8n;
+  ansicht.setUint32(voll.length - 8, Number(bits & 0xffffffffn), true);
+  ansicht.setUint32(voll.length - 4, Number(bits >> 32n), true);
+  const x = new Uint32Array(16);
+  for (let o = 0; o < voll.length; o += 64) {
+    for (let i = 0; i < 16; i += 1) x[i] = ansicht.getUint32(o + i * 4, true);
+    let a1 = h[0];
+    let b1 = h[1];
+    let c1 = h[2];
+    let d1 = h[3];
+    let e1 = h[4];
+    let a2 = h[0];
+    let b2 = h[1];
+    let c2 = h[2];
+    let d2 = h[3];
+    let e2 = h[4];
+    for (let j = 0; j < 80; j += 1) {
+      const runde = Math.floor(j / 16);
+      let t = (rol((a1 + funktion(j, b1, c1, d1) + x[R1[j]] + K1[runde]) >>> 0, S1[j]) + e1) >>> 0;
+      a1 = e1;
+      e1 = d1;
+      d1 = rol(c1, 10);
+      c1 = b1;
+      b1 = t;
+      t = (rol((a2 + funktion(79 - j, b2, c2, d2) + x[R2[j]] + K2[runde]) >>> 0, S2[j]) + e2) >>> 0;
+      a2 = e2;
+      e2 = d2;
+      d2 = rol(c2, 10);
+      c2 = b2;
+      b2 = t;
+    }
+    const t = (h[1] + c1 + d2) >>> 0;
+    h[1] = (h[2] + d1 + e2) >>> 0;
+    h[2] = (h[3] + e1 + a2) >>> 0;
+    h[3] = (h[4] + a1 + b2) >>> 0;
+    h[4] = (h[0] + b1 + c2) >>> 0;
+    h[0] = t;
+  }
+  const out = new Uint8Array(20);
+  const ov = new DataView(out.buffer);
+  for (let i = 0; i < 5; i += 1) ov.setUint32(i * 4, h[i], true);
+  return out;
+}
+
+return { ripemd160 };
 })();
 
 const M_ereignis_js = (() => {
@@ -556,7 +1213,7 @@ const M_pruefer_kern_js = (() => {
 const { hex, unhex, sha256Bytes, leafHash, verifyInclusion, verifyConsistency, MAX_BAUMGROESSE } = M_merkle_js;
 const { ereignisHashPruefen, auszugPruefen } = M_ereignis_js;
 const { zeitankerPruefen } = M_zeitanker_js;
-const { notizLesen, pruefpunktLesen, schluesselLesen, signaturenPruefen, base64Decode, TYP_ED25519, TYP_KOSIGNATUR } = M_note_js;
+const { notizLesen, pruefpunktLesen, schluesselLesen, signaturenPruefen, base64Decode, TYP_ED25519, TYP_KOSIGNATUR, TYP_SLH } = M_note_js;
 
 const encoder = new TextEncoder();
 const MAX_EREIGNISSE = 200000;
@@ -638,9 +1295,27 @@ function pruefeForm(pkg) {
   return null;
 }
 
+async function hashbasiertPruefen(notiz, punkt, opts, add) {
+  if (!opts.logSchluesselPq) return null;
+  try {
+    const pq = await schluesselLesen(opts.logSchluesselPq);
+    if (pq.typ !== TYP_SLH || pq.name !== punkt.origin) {
+      add("transparenz_pq", "Hashbasierter Schlüssel passt zum Protokoll", false, pq.typ !== TYP_SLH ? "Der festgelegte Schlüssel ist kein hashbasierter Schlüssel." : `Prüfpunkt ${punkt.origin}, Schlüssel ${pq.name}`);
+      return false;
+    }
+    const sig = await signaturenPruefen(notiz, [pq]);
+    const ok = sig.gueltig.length === 1 && sig.fehlerhaft.length === 0;
+    add("transparenz_pq", `Prüfpunkt trägt zusätzlich die hashbasierte Signatur (${pq.verfahren.toUpperCase().replace("SHA2-", "SLH-DSA-SHA2-")}) des festgelegten Protokollschlüssels`, ok, ok ? "Diese Signatur bleibt auch gegenüber einem späteren Quantencomputer gültig, soweit SHA-256 hält." : "Die Signatur fehlt oder ist ungültig.");
+    return ok;
+  } catch (err) {
+    add("transparenz_pq", "Hashbasierter Schlüssel ist lesbar", false, String(err?.message ?? err));
+    return false;
+  }
+}
+
 async function pruefeTransparenz(pkg, opts, head, add) {
   const t = pkg.transparenz;
-  const ergebnis = { vorhanden: Boolean(t), logGebunden: false, zeugenGueltig: 0, schwelle: 0, gebunden: false, gedeckt: 0, zeitanker: null };
+  const ergebnis = { vorhanden: Boolean(t), logGebunden: false, zeugenGueltig: 0, schwelle: 0, gebunden: false, gedeckt: 0, zeitanker: null, pq: null };
   if (!t) return ergebnis;
   let notiz;
   let punkt;
@@ -666,7 +1341,10 @@ async function pruefeTransparenz(pkg, opts, head, add) {
   ergebnis.logGebunden = Boolean(festgelegterLog) && logSig.gueltig.length === 1 && logSig.fehlerhaft.length === 0;
   add("transparenz_log", festgelegterLog ? "Prüfpunkt trägt die Signatur des festgelegten Protokollschlüssels" : "Prüfpunkt trägt eine Signatur des mitgelieferten Protokollschlüssels (nicht festgelegt)", logSig.gueltig.length === 1 && logSig.fehlerhaft.length === 0, `Baumgröße ${punkt.groesse}, Wurzel ${punkt.wurzelHex.slice(0, 16)}…`);
 
-  if (logSig.gueltig.length === 1 && logSig.fehlerhaft.length === 0) ergebnis.zeitanker = await zeitankerPruefen(punkt.erweiterungen, opts, add);
+  if (logSig.gueltig.length === 1 && logSig.fehlerhaft.length === 0) {
+    ergebnis.zeitanker = await zeitankerPruefen(punkt.erweiterungen, opts, add);
+    ergebnis.pq = await hashbasiertPruefen(notiz, punkt, opts, add);
+  }
 
   const zeugen = await Promise.all((opts.zeugen ?? []).map((z) => schluesselLesen(z)));
   const nurKosig = zeugen.filter((z) => z.typ === TYP_KOSIGNATUR);
@@ -834,7 +1512,7 @@ async function verifyPackage(pkg, opts = {}) {
     }
 
     const transparenz = await pruefeTransparenz(pkg, opts, head, add);
-    if (!transparenz.vorhanden && (opts.zeugen ?? []).length > 0) add("transparenz_fehlt", "Das Paket enthält Gegenzeichnungen der festgelegten Zeugen", false, "Es sind Zeugen festgelegt, aber das Paket bringt keinen Prüfpunkt mit.");
+    if (!transparenz.vorhanden && ((opts.zeugen ?? []).length > 0 || opts.logSchluesselPq)) add("transparenz_fehlt", "Das Paket enthält Gegenzeichnungen der festgelegten Zeugen und die verlangte hashbasierte Signatur", false, "Es sind Zeugen oder ein hashbasierter Schlüssel festgelegt, aber das Paket bringt keinen Prüfpunkt mit.");
     if (!transparenz.vorhanden) warnungen.push("Das Paket enthält keine Gegenzeichnungen unabhängiger Zeugen. Ein Betreiber könnte das Protokoll vor der Unterschrift neu geschrieben haben.");
     else if (!opts.logSchluessel) warnungen.push("Der Schlüssel des Protokolls ist nicht festgelegt. Die Gegenzeichnungen zählen nur, wenn der Prüfer den Protokollschlüssel und die Zeugen kennt.");
     else if (!(opts.zeugen ?? []).length) warnungen.push("Es sind keine Zeugen festgelegt. Ohne bekannte Zeugen lässt sich die Unabhängigkeit der Gegenzeichnungen nicht beurteilen.");
@@ -853,7 +1531,7 @@ async function verifyPackage(pkg, opts = {}) {
     if (Number.isInteger(opts.mindestStufe) && stufe < opts.mindestStufe) add("mindeststufe", `Mindestens Vertrauensstufe ${opts.mindestStufe} verlangt`, false, `erreicht ist Stufe ${stufe}`);
     const bestanden = checks.every((c) => c.ok);
     if (!bestanden) stufeText = "Nicht bestanden";
-    return { ok: bestanden, checks, warnungen, stufe, stufeText, treeSize: head.treeSize, keyId: head.signature.keyId, exportedAt: pkg.createdAt, asset: pkg.asset, zeitanker: transparenz.zeitanker };
+    return { ok: bestanden, checks, warnungen, stufe, stufeText, treeSize: head.treeSize, keyId: head.signature.keyId, exportedAt: pkg.createdAt, asset: pkg.asset, zeitanker: transparenz.zeitanker, pq: transparenz.pq };
   } catch (err) {
     return abbruch(`Unerwarteter Fehler beim Prüfen: ${String(err?.message ?? err)}`);
   }
@@ -881,8 +1559,10 @@ async function pruefpunktPruefen(text, opts = {}) {
       zeugenGueltig = sig.gueltig.length;
       add("zeugen", `${zeugenGueltig} von mindestens ${schwelle} geforderten Gegenzeichnungen festgelegter Zeugen sind gültig`, zeugenGueltig >= schwelle && schwelle > 0 && sig.fehlerhaft.length === 0, sig.gueltig.map((g) => g.name + " (" + new Date(g.zeit * 1000).toISOString() + ")").join(", "));
     }
-    const zeitanker = logSig.gueltig.length === 1 && logSig.fehlerhaft.length === 0 ? await zeitankerPruefen(punkt.erweiterungen, opts, add) : null;
-    return { ok: checks.every((c) => c.ok), checks, punkt, zeugenGueltig, schwelle, zeitanker };
+    const logOk = logSig.gueltig.length === 1 && logSig.fehlerhaft.length === 0;
+    const zeitanker = logOk ? await zeitankerPruefen(punkt.erweiterungen, opts, add) : null;
+    const pq = logOk ? await hashbasiertPruefen(notiz, punkt, opts, add) : null;
+    return { ok: checks.every((c) => c.ok), checks, punkt, zeugenGueltig, schwelle, zeitanker, pq };
   } catch (err) {
     add("form", "Prüfpunkt ist lesbar", false, String(err?.message ?? err));
     return { ok: false, checks, punkt: null, zeugenGueltig: 0, schwelle: 0 };
@@ -900,7 +1580,11 @@ const { pruefpunktPruefen } = M_pruefer_kern_js;
 const encoder = new TextEncoder();
 
 const INDEXREGELN = "indexregeln-1";
+const INDEXREGELN_2 = "indexregeln-2";
 const INDEXZEILE = "defconder-index-1";
+const INDEXZEILE_2 = "defconder-index-2";
+const ZEILEN = { [INDEXREGELN]: INDEXZEILE, [INDEXREGELN_2]: INDEXZEILE_2 };
+const MAX_ZEIT_MS = 253402300799999;
 const SCHLUESSELFELDER = ["id", "recordId", "userId", "actorId", "createdBy", "executedBy", "publishedBy", "deletedBy", "uploadedBy", "approvedBy", "sha256", "assetId", "entityTypeId", "actionTypeId", "objectId", "username", "purposeId", "apiKeyId"];
 const MAX_WERT = 200;
 const MAX_SCHLUESSEL = 400;
@@ -908,7 +1592,13 @@ const MAX_EREIGNISSE_IN_AUSSAGE = 100000;
 const NULL32 = new Uint8Array(32);
 const EINS32 = new Uint8Array(32).fill(255);
 
-function schluesselVon(ereignis) {
+function monatVon(ereignis) {
+  const at = ereignis.at;
+  if (!Number.isInteger(at) || at < 0 || at > MAX_ZEIT_MS) return null;
+  return new Date(at).toISOString().slice(0, 7);
+}
+
+function schluesselVon(ereignis, regeln = INDEXREGELN) {
   const menge = new Set();
   if (typeof ereignis.type === "string") menge.add(`typ=${ereignis.type}`);
   for (const feld of SCHLUESSELFELDER) {
@@ -916,6 +1606,14 @@ function schluesselVon(ereignis) {
     if (typeof wert === "string" && wert.length >= 1 && wert.length <= MAX_WERT) {
       menge.add(`${feld}=${wert}`);
       menge.add(`${ereignis.type}|${feld}=${wert}`);
+    }
+  }
+  if (regeln === INDEXREGELN_2) {
+    const monat = monatVon(ereignis);
+    if (monat) {
+      const basis = [...menge];
+      menge.add(`monat=${monat}`);
+      for (const k of basis) menge.add(`${k}|monat=${monat}`);
     }
   }
   return [...menge];
@@ -931,8 +1629,8 @@ function verbinden(...teile) {
   return out;
 }
 
-async function schluesselHash(schluessel) {
-  return sha256Bytes(encoder.encode(`${INDEXREGELN}\n${schluessel}`));
+async function schluesselHash(schluessel, regeln = INDEXREGELN) {
+  return sha256Bytes(encoder.encode(`${regeln}\n${schluessel}`));
 }
 
 function anzahlBytes(anzahl) {
@@ -955,10 +1653,10 @@ async function kettenWert(ereignisHashes) {
   return kette;
 }
 
-async function indexAufbauen(ereignisse) {
+async function indexAufbauen(ereignisse, regeln = INDEXREGELN) {
   const tabelle = new Map();
   for (const e of ereignisse) {
-    for (const schluessel of schluesselVon(e)) {
+    for (const schluessel of schluesselVon(e, regeln)) {
       const eintrag = tabelle.get(schluessel) ?? { anzahl: 0, kette: NULL32, hashes: [] };
       eintrag.kette = await kettePlus(eintrag.kette, e.hash);
       eintrag.anzahl += 1;
@@ -967,7 +1665,7 @@ async function indexAufbauen(ereignisse) {
     }
   }
   const zeilen = [];
-  for (const [schluessel, eintrag] of tabelle) zeilen.push({ schluessel, keyHash: await schluesselHash(schluessel), ...eintrag });
+  for (const [schluessel, eintrag] of tabelle) zeilen.push({ schluessel, keyHash: await schluesselHash(schluessel, regeln), ...eintrag });
   zeilen.push({ schluessel: null, keyHash: NULL32, anzahl: 0, kette: NULL32, hashes: [] });
   zeilen.push({ schluessel: null, keyHash: EINS32, anzahl: 0, kette: NULL32, hashes: [] });
   zeilen.sort((a, b) => (hex(a.keyHash) < hex(b.keyHash) ? -1 : hex(a.keyHash) > hex(b.keyHash) ? 1 : 0));
@@ -977,12 +1675,12 @@ async function indexAufbauen(ereignisse) {
   return { zeilen, blaetter, wurzel, anzahl: zeilen.length, tabelle };
 }
 
-function indexZeile(anzahl, wurzelHex) {
-  return `${INDEXZEILE} ${anzahl} ${base64Encode(unhex(wurzelHex))}`;
+function indexZeile(anzahl, wurzelHex, regeln = INDEXREGELN) {
+  return `${ZEILEN[regeln]} ${anzahl} ${base64Encode(unhex(wurzelHex))}`;
 }
 
 function indexZeileLesen(erweiterungen) {
-  const zeilen = (erweiterungen ?? []).filter((z) => z.startsWith(`${INDEXZEILE} `));
+  const zeilen = (erweiterungen ?? []).filter((z) => z.startsWith(`${INDEXZEILE} `) || z.startsWith(`${INDEXZEILE_2} `));
   if (zeilen.length !== 1) throw new Error(zeilen.length === 0 ? "Der Prüfpunkt enthält keine Indexzeile." : "Der Prüfpunkt enthält mehrere Indexzeilen.");
   const teile = zeilen[0].split(" ");
   if (teile.length !== 3 || !/^(0|[1-9][0-9]*)$/.test(teile[1])) throw new Error("Die Indexzeile ist ungültig.");
@@ -990,7 +1688,7 @@ function indexZeileLesen(erweiterungen) {
   if (!Number.isSafeInteger(anzahl) || anzahl < 2 || anzahl > MAX_BAUMGROESSE) throw new Error("Die Zahl der Indexeinträge ist ungültig.");
   const wurzel = base64Decode(teile[2]);
   if (wurzel.length !== 32) throw new Error("Die Indexwurzel hat nicht 32 Byte.");
-  return { anzahl, wurzelHex: hex(wurzel) };
+  return { anzahl, wurzelHex: hex(wurzel), regeln: zeilen[0].startsWith(`${INDEXZEILE_2} `) ? INDEXREGELN_2 : INDEXREGELN };
 }
 
 function istHex64(text) {
@@ -1029,7 +1727,7 @@ async function aussagePruefen(doc, opts = {}) {
   };
   try {
     if (!doc || doc.schema !== "defconder-aussage-1") return abbruch("Unbekanntes Format.");
-    if (doc.regeln !== INDEXREGELN) return abbruch("Unbekannte Indexregeln.");
+    if (!ZEILEN[doc.regeln]) return abbruch("Unbekannte Indexregeln.");
     if (typeof doc.notiz !== "string" || !Array.isArray(doc.aussagen) || doc.aussagen.length === 0 || doc.aussagen.length > 200) return abbruch("Prüfpunkt oder Aussagen fehlen.");
     const festgelegt = Boolean(opts.logSchluessel);
     const logSchluessel = opts.logSchluessel ?? doc.logSchluessel;
@@ -1039,13 +1737,14 @@ async function aussagePruefen(doc, opts = {}) {
     if (!punktErgebnis.punkt) return { ok: false, checks, warnungen, aussagen, stufe: 0, stufeText: "Nicht bestanden" };
     const punkt = punktErgebnis.punkt;
     const index = indexZeileLesen(punkt.erweiterungen);
-    add("indexzeile", `Der Prüfpunkt bindet einen Index mit ${index.anzahl} Einträgen`, true, `Indexwurzel ${index.wurzelHex.slice(0, 16)}…`);
+    add("indexzeile", `Der Prüfpunkt bindet einen Index mit ${index.anzahl} Einträgen (${index.regeln})`, true, `Indexwurzel ${index.wurzelHex.slice(0, 16)}…`);
+    add("indexregeln", "Die Aussage nennt dieselben Indexregeln wie der Prüfpunkt", index.regeln === doc.regeln, `Aussage ${doc.regeln}, Prüfpunkt ${index.regeln}`);
     for (const a of doc.aussagen) {
       if (!a || typeof a.schluessel !== "string" || a.schluessel.length === 0 || a.schluessel.length > MAX_SCHLUESSEL) {
         add("aussage", "Aussage hat einen gültigen Schlüssel", false, "Schlüssel fehlt oder ist zu lang.");
         continue;
       }
-      const K = hex(await schluesselHash(a.schluessel));
+      const K = hex(await schluesselHash(a.schluessel, doc.regeln));
       if (a.art === "vorhanden") {
         const leafOk = await blattPruefen({ keyHash: K, anzahl: a.anzahl, kette: a.kette, index: a.index, pfad: a.pfad }, index.anzahl, index.wurzelHex);
         add("vorhanden_index", `„${a.schluessel}“ steht im Index des Prüfpunkts (${a.anzahl} Ereignisse)`, leafOk && a.anzahl >= 1, leafOk ? "" : "Der Einschlussbeweis des Indexeintrags ist ungültig.");
@@ -1097,14 +1796,14 @@ async function aussagePruefen(doc, opts = {}) {
     const intern = checks.every((c) => c.ok);
     const { stufe, stufeText } = stufeBestimmen(intern, festgelegt, punktErgebnis);
     if (intern && Number.isInteger(opts.mindestStufe) && stufe < opts.mindestStufe) add("mindeststufe", `Mindestens Vertrauensstufe ${opts.mindestStufe} verlangt`, false, `erreicht ist Stufe ${stufe}`);
-    return { ok: checks.every((c) => c.ok), checks, warnungen, aussagen, stufe, stufeText: checks.every((c) => c.ok) ? stufeText : "Nicht bestanden", punkt };
+    return { ok: checks.every((c) => c.ok), checks, warnungen, aussagen, stufe, stufeText: checks.every((c) => c.ok) ? stufeText : "Nicht bestanden", punkt, pq: punktErgebnis.pq };
   } catch (err) {
     return abbruch(`Unerwarteter Fehler beim Prüfen: ${String(err?.message ?? err)}`);
   }
 }
 
 
-return { INDEXREGELN, INDEXZEILE, SCHLUESSELFELDER, schluesselVon, schluesselHash, anzahlBytes, blattDaten, kettePlus, kettenWert, indexAufbauen, indexZeile, indexZeileLesen, stufeBestimmen, aussagePruefen, notizLesen, pruefpunktLesen, unhex };
+return { INDEXREGELN, INDEXREGELN_2, INDEXZEILE, INDEXZEILE_2, SCHLUESSELFELDER, monatVon, schluesselVon, schluesselHash, anzahlBytes, blattDaten, kettePlus, kettenWert, indexAufbauen, indexZeile, indexZeileLesen, blattPruefen, stufeBestimmen, aussagePruefen, notizLesen, pruefpunktLesen, unhex };
 })();
 
 const M_regeln_js = (() => {
@@ -1262,7 +1961,7 @@ async function entscheidungPruefen(doc, opts = {}) {
     const festgelegt = Boolean(opts.logSchluessel);
     const logSchluessel = opts.logSchluessel ?? doc.logSchluessel;
     if (typeof logSchluessel !== "string") return abbruch("Es steht kein Schlüssel des Protokolls zur Verfügung.");
-    const punktErgebnis = await pruefpunktPruefen(doc.notiz, { ...opts, logSchluessel });
+    const punktErgebnis = opts.vorgepruefterPunkt ?? (await pruefpunktPruefen(doc.notiz, { ...opts, logSchluessel }));
     for (const c of punktErgebnis.checks) add(`punkt_${c.id}`, c.label, c.ok, c.detail);
     if (!punktErgebnis.punkt) return { ok: false, checks, warnungen, belege: [], stufe: 0, stufeText: "Nicht bestanden" };
     const punkt = punktErgebnis.punkt;
@@ -1337,7 +2036,7 @@ async function entscheidungPruefen(doc, opts = {}) {
     const intern = checks.every((c) => c.ok);
     const { stufe, stufeText } = stufeBestimmen(intern, festgelegt, punktErgebnis);
     if (intern && Number.isInteger(opts.mindestStufe) && stufe < opts.mindestStufe) add("mindeststufe", `Mindestens Vertrauensstufe ${opts.mindestStufe} verlangt`, false, `erreicht ist Stufe ${stufe}`);
-    return { ok: checks.every((c) => c.ok), checks, warnungen, belege, stufe, stufeText: checks.every((c) => c.ok) ? stufeText : "Nicht bestanden", punkt };
+    return { ok: checks.every((c) => c.ok), checks, warnungen, belege, stufe, stufeText: checks.every((c) => c.ok) ? stufeText : "Nicht bestanden", punkt, pq: punktErgebnis.pq };
   } catch (err) {
     return abbruch(`Unerwarteter Fehler beim Prüfen: ${String(err?.message ?? err)}`);
   }
@@ -1396,12 +2095,849 @@ async function widerspruchPruefen(doc, opts = {}) {
 return { widerspruchPruefen };
 })();
 
+const M_zeitbeweis_js = (() => {
+const { hex, unhex, sha256Bytes } = M_merkle_js;
+const { notizLesen, base64Decode } = M_note_js;
+const { ripemd160 } = M_ripemd____js;
+const { bitcoinKopfPruefen, STANDARD_MINDESTARBEIT_BITS } = M_zeitanker_js;
+const { pruefpunktPruefen } = M_pruefer_kern_js;
+const { stufeBestimmen } = M_aussage_js;
+
+const ZEITBEWEIS_SCHEMA = "defconder-zeitbeweis-1";
+
+const encoder = new TextEncoder();
+const MAGIE = Uint8Array.from([0x00, 0x4f, 0x70, 0x65, 0x6e, 0x54, 0x69, 0x6d, 0x65, 0x73, 0x74, 0x61, 0x6d, 0x70, 0x73, 0x00, 0x00, 0x50, 0x72, 0x6f, 0x6f, 0x66, 0x00, 0xbf, 0x89, 0xe2, 0xe8, 0x84, 0xe8, 0x92, 0x94]);
+const BITCOIN_TAG = "0588960d73d71901";
+const AUSSTEHEND_TAG = "83dfe30d2ef90c8e";
+const MAX_NACHRICHT = 4096;
+const MAX_KNOTEN = 20000;
+const MAX_TIEFE = 256;
+const MAX_DATEI = 1000000;
+const ZWEI_STUNDEN_MS = 2 * 60 * 60 * 1000;
+
+class Leser {
+  constructor(bytes) {
+    this.b = bytes;
+    this.pos = 0;
+  }
+
+  byte() {
+    if (this.pos >= this.b.length) throw new Error("Die Datei endet zu früh.");
+    return this.b[this.pos++];
+  }
+
+  bytes(n) {
+    if (!Number.isInteger(n) || n < 0 || this.pos + n > this.b.length) throw new Error("Die Datei endet zu früh.");
+    const out = this.b.slice(this.pos, this.pos + n);
+    this.pos += n;
+    return out;
+  }
+
+  varuint() {
+    let wert = 0;
+    for (let i = 0; i < 5; i += 1) {
+      const x = this.byte();
+      wert += (x & 0x7f) * 2 ** (7 * i);
+      if ((x & 0x80) === 0) return wert;
+    }
+    throw new Error("Eine Längenangabe ist zu groß.");
+  }
+
+  varbytes(max, min = 0) {
+    const n = this.varuint();
+    if (n > max || n < min) throw new Error("Eine Längenangabe liegt außerhalb des erlaubten Bereichs.");
+    return this.bytes(n);
+  }
+
+  ende() {
+    return this.pos === this.b.length;
+  }
+}
+
+function verbinden(...teile) {
+  const out = new Uint8Array(teile.reduce((n, t) => n + t.length, 0));
+  let o = 0;
+  for (const t of teile) {
+    out.set(t, o);
+    o += t.length;
+  }
+  return out;
+}
+
+async function zweig(l, nachricht, tag, tiefe, attest, zaehler) {
+  zaehler.knoten += 1;
+  if (zaehler.knoten > MAX_KNOTEN) throw new Error("Der Beweis hat zu viele Knoten.");
+  if (tag === 0x00) {
+    const art = hex(l.bytes(8));
+    const nutzlast = l.varbytes(MAX_NACHRICHT);
+    if (art === BITCOIN_TAG) {
+      const inneres = new Leser(nutzlast);
+      const hoehe = inneres.varuint();
+      if (!inneres.ende()) throw new Error("Die Bestätigung durch Bitcoin hat überzählige Bytes.");
+      attest.push({ art: "bitcoin", hoehe, nachricht });
+    } else if (art === AUSSTEHEND_TAG) attest.push({ art: "ausstehend" });
+    else attest.push({ art: "unbekannt", tag: art });
+    return;
+  }
+  let neu;
+  if (tag === 0x08) neu = await sha256Bytes(nachricht);
+  else if (tag === 0x03) neu = ripemd160(nachricht);
+  else if (tag === 0xf0) neu = verbinden(nachricht, l.varbytes(MAX_NACHRICHT, 1));
+  else if (tag === 0xf1) neu = verbinden(l.varbytes(MAX_NACHRICHT, 1), nachricht);
+  else if (tag === 0xf2) neu = Uint8Array.from(nachricht).reverse();
+  else if (tag === 0xf3) neu = encoder.encode(hex(nachricht));
+  else if (tag === 0x02 || tag === 0x67) throw new Error(`Die Operation ${tag === 0x02 ? "SHA-1" : "Keccak-256"} wird nicht unterstützt.`);
+  else throw new Error(`Unbekannte Operation ${tag.toString(16)}.`);
+  if (neu.length > MAX_NACHRICHT || neu.length === 0) throw new Error("Eine Zwischennachricht ist zu lang.");
+  await baum(l, neu, tiefe + 1, attest, zaehler);
+}
+
+async function baum(l, nachricht, tiefe, attest, zaehler) {
+  if (tiefe > MAX_TIEFE) throw new Error("Der Beweis ist zu tief verschachtelt.");
+  let tag = l.byte();
+  while (tag === 0xff) {
+    await zweig(l, nachricht, l.byte(), tiefe, attest, zaehler);
+    tag = l.byte();
+  }
+  await zweig(l, nachricht, tag, tiefe, attest, zaehler);
+}
+
+async function otsAuswerten(bytes) {
+  if (!(bytes instanceof Uint8Array) || bytes.length > MAX_DATEI) throw new Error("Der Beweis ist zu groß oder kein Byte-Feld.");
+  const l = new Leser(bytes);
+  const kopf = l.bytes(MAGIE.length);
+  for (let i = 0; i < MAGIE.length; i += 1) if (kopf[i] !== MAGIE[i]) throw new Error("Das ist keine OpenTimestamps-Datei.");
+  if (l.varuint() !== 1) throw new Error("Unbekannte Hauptversion des Beweises.");
+  if (l.byte() !== 0x08) throw new Error("Der Beweis beginnt nicht mit einer SHA-256-Prüfsumme.");
+  const digest = l.bytes(32);
+  const attest = [];
+  await baum(l, digest, 0, attest, { knoten: 0 });
+  if (!l.ende()) throw new Error("Nach dem Beweis folgen weitere Daten.");
+  return { digest, attestierungen: attest };
+}
+
+function merkleWurzelAusKopf(kopfHex) {
+  return unhex(kopfHex).slice(36, 68);
+}
+
+function gleich(a, b) {
+  return a.length === b.length && a.every((v, i) => v === b[i]);
+}
+
+async function zeitbeweisPruefen(doc, opts = {}) {
+  const checks = [];
+  const warnungen = [];
+  const add = (id, label, ok, detail = "") => checks.push({ id, label, ok: Boolean(ok), detail });
+  const abbruch = (text) => {
+    add("format", "Form des Zeitbeweises", false, text);
+    return { ok: false, checks, warnungen, stufe: 0, stufeText: "Nicht prüfbar", spaetestens: null, fruehestens: null };
+  };
+  try {
+    if (!doc || doc.schema !== ZEITBEWEIS_SCHEMA) return abbruch("Unbekanntes Format.");
+    if (typeof doc.notiz !== "string" || typeof doc.ots !== "string" || typeof doc.koepfe !== "object" || doc.koepfe === null || Array.isArray(doc.koepfe)) return abbruch("Prüfpunkt, Beweis oder Blockköpfe fehlen.");
+    const festgelegt = Boolean(opts.logSchluessel);
+    const logSchluessel = opts.logSchluessel ?? doc.logSchluessel;
+    if (typeof logSchluessel !== "string") return abbruch("Es steht kein Schlüssel des Protokolls zur Verfügung.");
+    const punktErgebnis = await pruefpunktPruefen(doc.notiz, { ...opts, logSchluessel });
+    for (const c of punktErgebnis.checks) add(`punkt_${c.id}`, c.label, c.ok, c.detail);
+    if (!punktErgebnis.punkt) return { ok: false, checks, warnungen, stufe: 0, stufeText: "Nicht bestanden", spaetestens: null, fruehestens: null };
+
+    const notiz = notizLesen(doc.notiz);
+    const digest = await sha256Bytes(encoder.encode(notiz.koerper));
+    let ots;
+    try {
+      ots = await otsAuswerten(base64Decode(doc.ots));
+    } catch (err) {
+      add("ots", "Der Zeitbeweis ist eine lesbare OpenTimestamps-Datei", false, String(err.message ?? err));
+      return { ok: false, checks, warnungen, stufe: 0, stufeText: "Nicht bestanden", spaetestens: null, fruehestens: null, punkt: punktErgebnis.punkt };
+    }
+    add("ots", `Der Zeitbeweis ist lesbar und enthält ${ots.attestierungen.length} Bestätigung${ots.attestierungen.length === 1 ? "" : "en"}`, true);
+    add("digest", "Der Zeitbeweis bezieht sich genau auf den signierten Text des Prüfpunkts", gleich(ots.digest, digest), `SHA-256 des Prüfpunkttextes ${hex(digest).slice(0, 16)}…`);
+
+    let bester = null;
+    let ausstehend = 0;
+    for (const a of ots.attestierungen) {
+      if (a.art === "ausstehend") {
+        ausstehend += 1;
+        continue;
+      }
+      if (a.art !== "bitcoin") continue;
+      const kopfHex = doc.koepfe[String(a.hoehe)];
+      if (typeof kopfHex !== "string") {
+        add("bitcoin", `Bestätigung durch Bitcoin-Block ${a.hoehe}`, false, "Der Blockkopf zu dieser Höhe liegt dem Dokument nicht bei.");
+        continue;
+      }
+      const kopf = await bitcoinKopfPruefen(kopfHex, { mindestArbeitBits: opts.mindestArbeitBits ?? STANDARD_MINDESTARBEIT_BITS });
+      if (!kopf.blockHash) {
+        add("bitcoin", `Blockkopf zu Höhe ${a.hoehe} ist gültig`, false, kopf.grund);
+        continue;
+      }
+      const wurzelOk = gleich(merkleWurzelAusKopf(kopfHex), a.nachricht);
+      const gueltig = kopf.ok && wurzelOk;
+      add("bitcoin", `Der Prüfpunkt steckt im Bitcoin-Block ${kopf.blockHash.slice(0, 16)}… (Höhe ${a.hoehe}, Blockzeit ${new Date(kopf.blockZeit).toISOString()})`, gueltig, gueltig ? `Rechenarbeit des Blocks rund 2^${kopf.arbeitBits}. Vergleichen Sie die Blockprüfsumme mit einer Blockübersicht Ihrer Wahl.` : !kopf.ok ? kopf.grund : "Die Wurzel der Transaktionen im Blockkopf passt nicht zum Ergebnis des Beweises.");
+      if (gueltig && (!bester || kopf.blockZeit < bester.blockZeit)) bester = { hoehe: a.hoehe, blockHash: kopf.blockHash, blockZeit: kopf.blockZeit };
+    }
+    if (!bester) add("bestaetigung", "Mindestens eine gültige Bestätigung durch Bitcoin", false, ausstehend > 0 ? "Der Beweis ist noch nicht in einem Block bestätigt (ausstehend). Er muss aufgerüstet werden, wenn die Kalenderserver die Bestätigung geliefert haben." : "Keine Bestätigung gefunden.");
+
+    const spaetestens = bester ? bester.blockZeit + ZWEI_STUNDEN_MS : null;
+    const fruehestens = punktErgebnis.zeitanker?.fruehestens ?? null;
+    if (spaetestens !== null && fruehestens !== null) add("korridor", `Der Prüfpunkt entstand frühestens ${new Date(fruehestens).toISOString()} und bestand spätestens ${new Date(spaetestens).toISOString()}`, fruehestens <= spaetestens, fruehestens <= spaetestens ? "" : "Die Untergrenze liegt nach der Obergrenze, die Zeitangaben widersprechen sich.");
+
+    warnungen.push("Blockzeiten sind nur auf etwa zwei Stunden genau. Der Prüfer rechnet vorsichtig mit der Blockzeit plus zwei Stunden als spätestem Zeitpunkt. Das stützt sich auf die übliche Annahme, dass die Mehrheit der Miner richtige Uhren hat.");
+    warnungen.push("Der Beweis zeigt, dass der Prüfpunkt bis zu diesem Zeitpunkt bestand. Er zeigt nicht, dass sein Inhalt wahr ist.");
+    if (!festgelegt) warnungen.push("Der Schlüssel des Protokolls ist nicht festgelegt. Der Zeitbeweis zeigt nur, wann dieser Text bestand, nicht, wer ihn erzeugt hat.");
+    const intern = checks.every((c) => c.ok);
+    const { stufe, stufeText } = stufeBestimmen(intern, festgelegt, punktErgebnis);
+    if (intern && Number.isInteger(opts.mindestStufe) && stufe < opts.mindestStufe) add("mindeststufe", `Mindestens Vertrauensstufe ${opts.mindestStufe} verlangt`, false, `erreicht ist Stufe ${stufe}`);
+    const ok = checks.every((c) => c.ok);
+    return { ok, checks, warnungen, stufe, stufeText: ok ? stufeText : "Nicht bestanden", spaetestens, fruehestens, bitcoin: bester, pq: punktErgebnis.pq, punkt: punktErgebnis.punkt };
+  } catch (err) {
+    return abbruch(`Unerwarteter Fehler beim Prüfen: ${String(err?.message ?? err)}`);
+  }
+}
+
+return { ZEITBEWEIS_SCHEMA, otsAuswerten, merkleWurzelAusKopf, zeitbeweisPruefen };
+})();
+
+const M_stichprobe_js = (() => {
+const { hex, unhex, sha256Bytes, verifyInclusion } = M_merkle_js;
+const { sha256Sync } = M_sha___sync_js;
+const { notizLesen, pruefpunktLesen, base64Decode } = M_note_js;
+const { ereignisHashPruefen, auszugPruefen } = M_ereignis_js;
+const { bitcoinKopfPruefen, STANDARD_MINDESTARBEIT_BITS } = M_zeitanker_js;
+const { zeitbeweisPruefen, ZEITBEWEIS_SCHEMA } = M_zeitbeweis_js;
+const { entscheidungPruefen } = M_entscheidung_js;
+const { pruefpunktPruefen } = M_pruefer_kern_js;
+const { stufeBestimmen, schluesselVon, schluesselHash, blattPruefen, indexZeileLesen } = M_aussage_js;
+
+const STICHPROBE_SCHEMA = "defconder-stichprobe-1";
+const MAX_ZIEHUNGEN = 100000;
+const MAX_VERSCHIEDENE = 5000;
+const ENTSCHEIDUNGSTYPEN = ["AccessDenied", "FederatedQueryExecuted"];
+const PRUEFUNGEN = ["kette", "index", "entscheidung"];
+const GENESIS = "0".repeat(64);
+const encoder = new TextEncoder();
+const GRENZE = 2n ** 64n;
+
+function u64(wert) {
+  const out = new Uint8Array(8);
+  new DataView(out.buffer).setBigUint64(0, BigInt(wert), false);
+  return out;
+}
+
+function verbinden(...teile) {
+  const out = new Uint8Array(teile.reduce((n, t) => n + t.length, 0));
+  let o = 0;
+  for (const t of teile) {
+    out.set(t, o);
+    o += t.length;
+  }
+  return out;
+}
+
+function ziehen({ wurzelHex, groesse, beaconHex, anzahl }) {
+  if (!Number.isInteger(groesse) || groesse < 1 || !Number.isInteger(anzahl) || anzahl < 1 || anzahl > MAX_ZIEHUNGEN) throw new Error("Ungültige Angaben zur Ziehung.");
+  const saat = sha256Sync(verbinden(encoder.encode(`${STICHPROBE_SCHEMA}\u0000`), unhex(wurzelHex), unhex(beaconHex), u64(groesse), u64(anzahl)));
+  const n = BigInt(groesse);
+  const grenze = (GRENZE / n) * n;
+  const ergebnis = [];
+  for (let zaehler = 0; ergebnis.length < anzahl; zaehler += 1) {
+    const roh = sha256Sync(verbinden(saat, u64(zaehler)));
+    const wert = new DataView(roh.buffer, roh.byteOffset, 8).getBigUint64(0, false);
+    if (wert >= grenze) continue;
+    ergebnis.push(Number(wert % n));
+  }
+  return ergebnis;
+}
+
+function obergrenze(anzahl, konfidenz) {
+  return 1 - Math.exp(Math.log(1 - konfidenz) / anzahl);
+}
+
+function prozent(anteil) {
+  const wert = Math.ceil(anteil * 1e6) / 1e4;
+  return `${wert.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} %`;
+}
+
+async function kopfKetteTesten(koepfe, ersterKopfHex, abstand, mindestArbeitBits, add) {
+  if (!Array.isArray(koepfe) || koepfe.length !== abstand || koepfe.length > 1000) {
+    add("zufall_koepfe", "Die Blockköpfe für den Zufall liegen vollständig bei", false, `Erwartet sind ${abstand} Blockköpfe.`);
+    return null;
+  }
+  let vorher = await bitcoinKopfPruefen(ersterKopfHex, { mindestArbeitBits });
+  if (!vorher.blockHash) return null;
+  let letzter = vorher;
+  for (let i = 0; i < koepfe.length; i += 1) {
+    const r = await bitcoinKopfPruefen(koepfe[i], { mindestArbeitBits });
+    if (!r.ok) {
+      add("zufall_kette", `Blockkopf ${i + 1} nach dem bestätigten Block ist gültig`, false, r.grund);
+      return null;
+    }
+    const zurueck = hex(Uint8Array.from(unhex(koepfe[i]).slice(4, 36)).reverse());
+    if (zurueck !== letzter.blockHash) {
+      add("zufall_kette", `Blockkopf ${i + 1} nach dem bestätigten Block schließt an seinen Vorgänger an`, false, "Der Vorgänger im Blockkopf ist ein anderer Block.");
+      return null;
+    }
+    letzter = r;
+  }
+  return letzter;
+}
+
+async function stichprobePruefen(doc, opts = {}) {
+  const checks = [];
+  const warnungen = [];
+  const add = (id, label, ok, detail = "") => checks.push({ id, label, ok: Boolean(ok), detail });
+  const abbruch = (text) => {
+    add("format", "Form der Stichprobe", false, text);
+    return { ok: false, checks, warnungen, stufe: 0, stufeText: "Nicht prüfbar", stichprobe: null };
+  };
+  try {
+    if (!doc || doc.schema !== STICHPROBE_SCHEMA) return abbruch("Unbekanntes Format.");
+    const regel = doc.regel;
+    if (!regel || !Number.isInteger(regel.anzahl) || regel.anzahl < 1 || regel.anzahl > MAX_ZIEHUNGEN || !Number.isInteger(regel.abstand) || regel.abstand < 1 || regel.abstand > 1000 || typeof regel.konfidenz !== "number" || !(regel.konfidenz > 0 && regel.konfidenz < 1)) return abbruch("Die Regel der Stichprobe ist unvollständig oder unzulässig.");
+    if (!Array.isArray(regel.pruefungen) || regel.pruefungen.length === 0 || regel.pruefungen.some((p) => !PRUEFUNGEN.includes(p)) || !regel.pruefungen.includes("kette")) return abbruch("Die geprüften Eigenschaften sind unzulässig. Die Kette gehört immer dazu.");
+    if (typeof doc.notiz !== "string" || !doc.zeitbeweis || typeof doc.zeitbeweis !== "object" || !doc.zufall || !Array.isArray(doc.zufall.koepfe) || !Array.isArray(doc.proben) || doc.proben.length > MAX_VERSCHIEDENE) return abbruch("Prüfpunkt, Zeitbeweis, Zufall oder Proben fehlen.");
+    if (Number.isInteger(opts.mindestAnzahl) && regel.anzahl < opts.mindestAnzahl) add("mindestanzahl", `Mindestens ${opts.mindestAnzahl} Ziehungen verlangt`, false, `Die Stichprobe hat nur ${regel.anzahl}.`);
+    if (Number.isInteger(opts.mindestAbstand) && regel.abstand < opts.mindestAbstand) add("mindestabstand", `Mindestens ${opts.mindestAbstand} Blöcke Abstand für den Zufall verlangt`, false, `Die Stichprobe nutzt ${regel.abstand}.`);
+    if (regel.abstand < 6) warnungen.push("Der Zufall stammt aus einem Block, der weniger als sechs Blöcke nach der Bestätigung liegt. Ein Block kann in seltenen Fällen noch verworfen werden. Üblich sind mindestens sechs.");
+
+    const festgelegt = Boolean(opts.logSchluessel);
+    const logSchluessel = opts.logSchluessel ?? doc.logSchluessel;
+    if (typeof logSchluessel !== "string") return abbruch("Es steht kein Schlüssel des Protokolls zur Verfügung.");
+    const zeit = await zeitbeweisPruefen({ ...doc.zeitbeweis, schema: ZEITBEWEIS_SCHEMA, notiz: doc.notiz, logSchluessel: doc.logSchluessel }, { ...opts, logSchluessel });
+    for (const c of zeit.checks) add(`zeit_${c.id}`, c.label, c.ok, c.detail);
+    if (!zeit.punkt) return { ok: false, checks, warnungen, stufe: 0, stufeText: "Nicht bestanden", stichprobe: null };
+    const punktErgebnis = await pruefpunktPruefen(doc.notiz, { ...opts, logSchluessel });
+    const punkt = punktErgebnis.punkt;
+
+    const mindestArbeitBits = opts.mindestArbeitBits ?? STANDARD_MINDESTARBEIT_BITS;
+    let beacon = null;
+    let hoehe = null;
+    if (zeit.bitcoin) {
+      hoehe = zeit.bitcoin.hoehe;
+      const ersterKopf = doc.zeitbeweis.koepfe?.[String(hoehe)];
+      if (typeof ersterKopf === "string") {
+        beacon = await kopfKetteTesten(doc.zufall.koepfe, ersterKopf, regel.abstand, mindestArbeitBits, add);
+        if (beacon) add("zufall", `Der Zufall stammt aus dem Bitcoin-Block ${beacon.blockHash.slice(0, 16)}… (${regel.abstand} Blöcke nach dem bestätigten Block ${hoehe})`, true, "Dieser Block war beim Festschreiben des Prüfpunkts noch nicht gefunden.");
+      }
+    }
+    if (!beacon) add("zufall", "Der Zufall aus einem späteren Bitcoin-Block ist nachweisbar", false, "Es fehlt ein bestätigter Zeitbeweis oder die Kette der Blockköpfe.");
+
+    let gezogen = [];
+    if (beacon) {
+      gezogen = ziehen({ wurzelHex: punkt.wurzelHex, groesse: punkt.groesse, beaconHex: beacon.blockHash, anzahl: regel.anzahl });
+      const verschieden = [...new Set(gezogen)].sort((a, b) => a - b);
+      const vorgelegt = doc.proben.map((p) => p?.seq);
+      const gleich = vorgelegt.length === verschieden.length && vorgelegt.every((s, i) => s === verschieden[i]);
+      add("ziehung", `Die ${regel.anzahl} Ziehungen (${verschieden.length} verschiedene Ereignisse) wurden aus Prüfpunkt und Blockprüfsumme nachgerechnet und sind genau die vorgelegten`, gleich, gleich ? "" : "Die vorgelegten Ereignisse sind nicht die gezogenen.");
+      if (!gleich) return { ok: false, checks, warnungen, stufe: 0, stufeText: "Nicht bestanden", stichprobe: null, punkt };
+    }
+
+    let index = null;
+    if (regel.pruefungen.includes("index")) {
+      try {
+        index = indexZeileLesen(punkt.erweiterungen);
+      } catch (err) {
+        add("index_zeile", "Der Prüfpunkt bindet einen Index", false, String(err.message));
+      }
+    }
+
+    const fehler = { kette: [], index: [], entscheidung: [] };
+    let entscheidungenGeprueft = 0;
+    let offeneEreignisse = 0;
+    for (const probe of doc.proben) {
+      if (!probe || !Number.isInteger(probe.seq) || probe.seq < 0 || probe.seq >= punkt.groesse || typeof probe.pfad !== "object" || !Array.isArray(probe.pfad) || (probe.event && probe.auszug) || !(probe.event || probe.auszug)) {
+        fehler.kette.push(`Probe ${probe?.seq}: unvollständig`);
+        continue;
+      }
+      let ereignis = probe.event;
+      let hashOk;
+      if (probe.auszug) {
+        const a = await auszugPruefen(probe.auszug);
+        hashOk = a.ok;
+        const offen = {};
+        for (const o of a.offene ?? []) offen[o.name] = o.wert;
+        const k = probe.auszug.kopf;
+        ereignis = { ...offen, seq: k.seq, type: k.type, at: k.at, hv: k.hv, prevHash: k.prevHash, hash: k.hash };
+      } else {
+        hashOk = (await ereignisHashPruefen(ereignis)).ok;
+      }
+      const drin = hashOk && ereignis.seq === probe.seq && (await verifyInclusion({ index: probe.seq, treeSize: punkt.groesse, eventHash: ereignis.hash, path: probe.pfad, rootHash: punkt.wurzelHex }));
+      let verkettet = false;
+      if (drin) {
+        if (probe.seq === 0) verkettet = ereignis.prevHash === GENESIS;
+        else {
+          const v = probe.vorgaenger;
+          verkettet = Boolean(v) && typeof v.hash === "string" && v.hash === ereignis.prevHash && Array.isArray(v.pfad) && (await verifyInclusion({ index: probe.seq - 1, treeSize: punkt.groesse, eventHash: v.hash, path: v.pfad, rootHash: punkt.wurzelHex }));
+        }
+      }
+      if (!drin || !verkettet) fehler.kette.push(`Ereignis ${probe.seq}: ${!drin ? "Prüfsumme oder Einschluss ungültig" : "Vorgänger nicht belegt"}`);
+
+      if (regel.pruefungen.includes("index")) {
+        let ok = Boolean(index) && !probe.auszug;
+        let grund = probe.auszug ? "liegt nur als Auszug vor" : index ? "" : "kein Index";
+        if (ok) {
+          const belege = Array.isArray(probe.indexBelege) ? probe.indexBelege : [];
+          for (const schluessel of schluesselVon(ereignis, index.regeln)) {
+            const b = belege.find((x) => x?.schluessel === schluessel);
+            const keyHash = hex(await schluesselHash(schluessel, index.regeln));
+            const leafOk = b && keyHash === b.keyHash && Number.isSafeInteger(b.anzahl) && b.anzahl >= 1 && (await blattPruefen(b, index.anzahl, index.wurzelHex));
+            if (!leafOk) {
+              ok = false;
+              grund = `Schlüssel „${schluessel}“ ist nicht im Index belegt`;
+              break;
+            }
+          }
+        }
+        if (!ok) fehler.index.push(`Ereignis ${probe.seq}: ${grund}`);
+      }
+
+      if (regel.pruefungen.includes("entscheidung") && ENTSCHEIDUNGSTYPEN.includes(ereignis.type)) {
+        offeneEreignisse += 1;
+        let ok = false;
+        let grund = "";
+        if (!Array.isArray(ereignis.belege)) grund = probe.auszug ? "Belege sind verdeckt" : "Ein Entscheidungsereignis trägt keine Belege";
+        else if (!probe.entscheidung || !Array.isArray(probe.entscheidung.ereignisse)) grund = "Der Entscheidungsnachweis fehlt";
+        else {
+          const r = await entscheidungPruefen({ schema: "defconder-entscheidung-1", notiz: doc.notiz, logSchluessel, seq: probe.seq, ereignisse: probe.entscheidung.ereignisse }, { ...opts, logSchluessel, vorgepruefterPunkt: punktErgebnis });
+          ok = r.ok;
+          grund = r.ok ? "" : r.checks.filter((c) => !c.ok && !c.id.startsWith("punkt_")).map((c) => c.label).slice(0, 2).join("; ");
+          if (ok) entscheidungenGeprueft += 1;
+        }
+        if (!ok) fehler.entscheidung.push(`Ereignis ${probe.seq}: ${grund}`);
+      }
+    }
+
+    const verschiedene = doc.proben.length;
+    add("proben_kette", `Prüfsumme, Einschluss im Protokoll und Verkettung stimmen bei allen ${verschiedene} gezogenen Ereignissen`, fehler.kette.length === 0, fehler.kette.slice(0, 3).join("; "));
+    if (regel.pruefungen.includes("index")) add("proben_index", `Alle Schlüssel aller gezogenen Ereignisse stehen im Index des Prüfpunkts`, fehler.index.length === 0, fehler.index.slice(0, 3).join("; "));
+    if (regel.pruefungen.includes("entscheidung")) add("proben_entscheidung", `Alle gezogenen Entscheidungsereignisse (${offeneEreignisse}) tragen Belege, die zur veröffentlichten Regel passen`, fehler.entscheidung.length === 0, fehler.entscheidung.slice(0, 3).join("; "));
+
+    const alleOk = fehler.kette.length === 0 && fehler.index.length === 0 && fehler.entscheidung.length === 0;
+    const grenze = obergrenze(regel.anzahl, regel.konfidenz);
+    if (alleOk && beacon) add("schranke", `Bei ${regel.anzahl} Ziehungen ohne Verstoß liegt der Anteil verletzender Ereignisse mit ${Math.round(regel.konfidenz * 1000) / 10} % Sicherheit unter ${prozent(grenze)}`, true, "Rechnung: Wäre der Anteil p, bliebe eine Stichprobe dieser Größe nur mit Wahrscheinlichkeit (1 minus p) hoch Anzahl ohne Fund.");
+
+    warnungen.push("Eine Stichprobe findet seltene einzelne Verstöße nicht. Sie ergänzt die Beweise und ersetzt sie nicht.");
+    warnungen.push("Der Zufall stützt sich darauf, dass der Betreiber den Prüfpunkt festgeschrieben hat, bevor der Block mit dem Zufall gefunden wurde. Das gilt nur, wenn der Prüfpunkt von unabhängigen Zeugen bestätigt ist, sonst hätte er mehrere Prüfpunkte vorbereiten und den günstigen später vorlegen können.");
+    if (!festgelegt) warnungen.push("Der Schlüssel des Protokolls ist nicht festgelegt. Die Stichprobe zeigt nur, dass sie in sich stimmig ist.");
+    const intern = checks.every((c) => c.ok);
+    const { stufe, stufeText } = stufeBestimmen(intern, festgelegt, punktErgebnis);
+    if (intern && stufe < 2) warnungen.push("Der Prüfpunkt ist nicht von festgelegten, unabhängigen Zeugen bestätigt. Die Aussage der Stichprobe gilt dann nur unter der Annahme, dass der Betreiber nicht mehrere Prüfpunkte vorbereitet hat.");
+    if (intern && Number.isInteger(opts.mindestStufe) && stufe < opts.mindestStufe) add("mindeststufe", `Mindestens Vertrauensstufe ${opts.mindestStufe} verlangt`, false, `erreicht ist Stufe ${stufe}`);
+    const ok = checks.every((c) => c.ok);
+    const ergebnis = { gezogen: regel.anzahl, verschieden: verschiedene, konfidenz: regel.konfidenz, obergrenze: alleOk ? grenze : null, beacon: beacon?.blockHash ?? null, hoehe, groesse: punkt.groesse, einzelverstossUnentdeckt: punkt.groesse > 0 ? 1 - Math.min(1, verschiedene / punkt.groesse) : null, entscheidungenGeprueft, fehler };
+    return { ok, checks, warnungen, stufe, stufeText: ok ? stufeText : "Nicht bestanden", stichprobe: ergebnis, pq: punktErgebnis.pq, spaetestens: zeit.spaetestens, fruehestens: zeit.fruehestens, punkt };
+  } catch (err) {
+    return abbruch(`Unerwarteter Fehler beim Prüfen: ${String(err?.message ?? err)}`);
+  }
+}
+
+
+return { STICHPROBE_SCHEMA, MAX_ZIEHUNGEN, MAX_VERSCHIEDENE, ENTSCHEIDUNGSTYPEN, PRUEFUNGEN, ziehen, obergrenze, stichprobePruefen, notizLesen, pruefpunktLesen, base64Decode, sha256Bytes };
+})();
+
+const M_freigabe_js = (() => {
+const { unhex, hex, verifyInclusion, verifyConsistency } = M_merkle_js;
+const { schluesselLesen, TYP_ED25519 } = M_note_js;
+const { ereignisHashPruefen, auszugPruefen } = M_ereignis_js;
+const { pruefpunktPruefen, canonicalJson } = M_pruefer_kern_js;
+const { stufeBestimmen, aussagePruefen } = M_aussage_js;
+
+const FREIGABE_SCHEMA = "defconder-freigabe-1";
+const AUSKUNFT_SCHEMA = "defconder-freigabeauskunft-1";
+const BERICHT_SCHEMA = "defconder-freigabebericht-1";
+const QUITTUNG_SCHEMA = "defconder-freigabequittung-1";
+const encoder = new TextEncoder();
+const MAX_QUITTUNGEN = 200;
+const MAX_HUETER = 32;
+
+function istHex(text, laenge) {
+  return typeof text === "string" && new RegExp(`^[0-9a-f]{${laenge}}$`).test(text);
+}
+
+async function ed25519Pruefen(publicKey, nachricht, signaturHex) {
+  try {
+    if (!istHex(signaturHex, 128)) return false;
+    const key = await globalThis.crypto.subtle.importKey("raw", publicKey, { name: "Ed25519" }, false, ["verify"]);
+    return await globalThis.crypto.subtle.verify({ name: "Ed25519" }, key, unhex(signaturHex), nachricht);
+  } catch {
+    return false;
+  }
+}
+
+function ohneSignatur(objekt) {
+  const kopie = { ...objekt };
+  delete kopie.signatur;
+  return kopie;
+}
+
+async function huetersLesen(liste) {
+  const nachName = new Map();
+  for (const text of liste ?? []) {
+    const s = await schluesselLesen(text);
+    if (s.typ !== TYP_ED25519) throw new Error("Ein Hüterschlüssel muss ein Ed25519-Schlüssel sein.");
+    if (nachName.has(s.name)) throw new Error("Zwei Hüter haben denselben Namen.");
+    nachName.set(s.name, s);
+  }
+  return nachName;
+}
+
+async function signiertPruefen(objekt, hueterMap) {
+  const s = hueterMap.get(objekt?.hueter);
+  if (!s) return false;
+  return ed25519Pruefen(s.publicKey, encoder.encode(canonicalJson(ohneSignatur(objekt))), objekt.signatur);
+}
+
+async function ereignisLesen(eintrag) {
+  if (!eintrag || typeof eintrag !== "object" || (eintrag.event && eintrag.auszug) || !(eintrag.event || eintrag.auszug)) return { ok: false, grund: "Das Ereignis fehlt oder ist doppelt." };
+  if (eintrag.auszug) {
+    const a = await auszugPruefen(eintrag.auszug);
+    if (!a.ok) return { ok: false, grund: a.grund };
+    const offen = {};
+    for (const o of a.offene ?? []) offen[o.name] = o.wert;
+    const k = eintrag.auszug.kopf;
+    return { ok: true, ereignis: { ...offen, seq: k.seq, type: k.type, at: k.at, hv: k.hv, prevHash: k.prevHash, hash: k.hash } };
+  }
+  const r = await ereignisHashPruefen(eintrag.event);
+  return r.ok ? { ok: true, ereignis: eintrag.event } : { ok: false, grund: r.grund };
+}
+
+async function freigabePruefen(doc, opts = {}) {
+  const checks = [];
+  const warnungen = [];
+  const add = (id, label, ok, detail = "") => checks.push({ id, label, ok: Boolean(ok), detail });
+  const abbruch = (text) => {
+    add("format", "Form des Freigabenachweises", false, text);
+    return { ok: false, checks, warnungen, stufe: 0, stufeText: "Nicht prüfbar", gueltigeHueter: [] };
+  };
+  try {
+    if (!doc || doc.schema !== FREIGABE_SCHEMA) return abbruch("Unbekanntes Format.");
+    if (typeof doc.notiz !== "string" || typeof doc.objektId !== "string" || doc.objektId.length === 0 || !doc.anfrage || !Array.isArray(doc.anfrage.pfad) || !Array.isArray(doc.quittungen) || doc.quittungen.length === 0 || doc.quittungen.length > MAX_QUITTUNGEN) return abbruch("Prüfpunkt, Objekt, Anfrage oder Quittungen fehlen.");
+    const festgelegt = Boolean(opts.logSchluessel);
+    const logSchluessel = opts.logSchluessel ?? doc.logSchluessel;
+    if (typeof logSchluessel !== "string") return abbruch("Es steht kein Schlüssel des Protokolls zur Verfügung.");
+    const punktErgebnis = await pruefpunktPruefen(doc.notiz, { ...opts, logSchluessel });
+    for (const c of punktErgebnis.checks) add(`punkt_${c.id}`, c.label, c.ok, c.detail);
+    if (!punktErgebnis.punkt) return { ok: false, checks, warnungen, stufe: 0, stufeText: "Nicht bestanden", gueltigeHueter: [] };
+    const punkt = punktErgebnis.punkt;
+
+    const gelesen = await ereignisLesen(doc.anfrage);
+    if (!gelesen.ok) {
+      add("anfrage", "Die Anfrage steht als gültiges Ereignis im Nachweis", false, gelesen.grund);
+      return { ok: false, checks, warnungen, stufe: 0, stufeText: "Nicht bestanden", gueltigeHueter: [] };
+    }
+    const e = gelesen.ereignis;
+    const drin = Number.isInteger(e.seq) && e.seq < punkt.groesse && (await verifyInclusion({ index: e.seq, treeSize: punkt.groesse, eventHash: e.hash, path: doc.anfrage.pfad, rootHash: punkt.wurzelHex }));
+    add("anfrage", `Die Anfrage (Ereignis ${e.seq}, ${e.type}) steht im Protokoll des Prüfpunkts`, drin, drin ? "" : "Der Einschlussbeweis ist ungültig.");
+    const objektOk = e.objectId === doc.objektId;
+    add("anfrage_objekt", `Die Anfrage nennt das Objekt „${doc.objektId}“`, objektOk, objektOk ? "" : "Das Objekt im Ereignis ist ein anderes oder verdeckt.");
+    if (typeof opts.erwartetesObjekt === "string") add("erwartet_objekt", `Der Nachweis gilt für das verlangte Objekt „${opts.erwartetesObjekt}“`, doc.objektId === opts.erwartetesObjekt && e.objectId === opts.erwartetesObjekt, "");
+    if (typeof opts.erwarteterNutzer === "string") add("erwartet_nutzer", `Die Anfrage stammt vom verlangten Nutzer „${opts.erwarteterNutzer}“`, e.userId === opts.erwarteterNutzer, "");
+    if (doc.nutzerId !== undefined) add("anfrage_nutzer", `Die Anfrage stammt vom Nutzer „${doc.nutzerId}“`, e.userId === doc.nutzerId, "");
+    if (Array.isArray(opts.erlaubteTypen) && opts.erlaubteTypen.length > 0) add("anfrage_typ", "Das Ereignis hat einen Typ, der als Anfrage zählt", opts.erlaubteTypen.includes(e.type), `Typ ${e.type}`);
+
+    const hueterGebunden = Array.isArray(opts.hueter) && opts.hueter.length > 0;
+    const hueter = await huetersLesen(hueterGebunden ? opts.hueter : doc.hueter);
+    const schwelle = Number.isInteger(opts.hueterSchwelle) ? opts.hueterSchwelle : doc.schwelle;
+    if (!Number.isInteger(schwelle) || schwelle < 1 || schwelle > MAX_HUETER) return abbruch("Die Schwelle der Hüter fehlt oder ist unzulässig.");
+
+    const gueltig = [];
+    const probleme = [];
+    const gesehen = new Set();
+    for (const q of doc.quittungen) {
+      let grund = "";
+      if (!q || q.schema !== QUITTUNG_SCHEMA || typeof q.hueter !== "string") grund = "Form";
+      else if (gesehen.has(q.hueter)) grund = "doppelt";
+      else if (!(await signiertPruefen(q, hueter))) grund = "Signatur oder Hüter unbekannt";
+      else if (q.anfrageHash !== e.hash || q.seq !== e.seq || q.objektId !== doc.objektId || (doc.nutzerId !== undefined && q.nutzerId !== doc.nutzerId)) grund = "nennt eine andere Anfrage";
+      else if (!Number.isInteger(q.groesse) || q.groesse <= e.seq || q.groesse > punkt.groesse || !istHex(q.wurzel, 64)) grund = "nennt einen unzulässigen Stand des Protokolls";
+      else if (q.groesse === punkt.groesse) {
+        if (q.wurzel !== punkt.wurzelHex) grund = "nennt eine andere Wurzel für denselben Stand";
+      } else {
+        const k = (doc.konsistenz ?? {})[`${q.groesse}-${punkt.groesse}`];
+        const ok = Array.isArray(k?.pfad) && (await verifyConsistency({ oldSize: q.groesse, newSize: punkt.groesse, oldRoot: q.wurzel, newRoot: punkt.wurzelHex, proof: k.pfad }));
+        if (!ok) grund = "nennt einen Stand, der nicht zum Prüfpunkt passt (Konsistenzbeweis fehlt oder ist ungültig)";
+      }
+      gesehen.add(q?.hueter);
+      if (grund) probleme.push(`${q?.hueter ?? "?"}: ${grund}`);
+      else gueltig.push(q.hueter);
+    }
+    add("quittungen", `${gueltig.length} von mindestens ${schwelle} geforderten Quittungen festgelegter Hüter sind gültig und beziehen sich auf genau diese Anfrage`, gueltig.length >= schwelle, probleme.join("; "));
+    if (probleme.length > 0 && gueltig.length >= schwelle) warnungen.push(`Einige Quittungen sind ungültig und zählen nicht: ${probleme.join("; ")}`);
+    if (!hueterGebunden) warnungen.push("Die Schlüssel der Hüter sind nicht festgelegt. Der Nachweis zeigt nur, dass er in sich stimmig ist, nicht, dass die Hüter die sind, denen Sie vertrauen.");
+    warnungen.push("Der Nachweis zeigt, dass die Anfrage vor der Freigabe im Protokoll stand. Er zeigt nicht, dass die Hüter nicht zusammengearbeitet haben, und nicht, dass der Empfänger den Klartext nicht weitergegeben hat.");
+    if (!festgelegt) warnungen.push("Der Schlüssel des Protokolls ist nicht festgelegt. Der Nachweis zeigt nur, dass er in sich stimmig ist.");
+    const intern = checks.every((c) => c.ok);
+    let { stufe, stufeText } = stufeBestimmen(intern, festgelegt, punktErgebnis);
+    if (!hueterGebunden && stufe > 0) {
+      stufe = 0;
+      stufeText = "Nur in sich stimmig, Hüter nicht festgelegt";
+    }
+    if (intern && Number.isInteger(opts.mindestStufe) && stufe < opts.mindestStufe) add("mindeststufe", `Mindestens Vertrauensstufe ${opts.mindestStufe} verlangt`, false, `erreicht ist Stufe ${stufe}`);
+    const ok = checks.every((c) => c.ok);
+    return { ok, checks, warnungen, stufe, stufeText: ok ? stufeText : "Nicht bestanden", gueltigeHueter: gueltig, schwelle, anfrage: { seq: e.seq, type: e.type, hash: e.hash, objektId: doc.objektId }, pq: punktErgebnis.pq, punkt };
+  } catch (err) {
+    return abbruch(`Unerwarteter Fehler beim Prüfen: ${String(err?.message ?? err)}`);
+  }
+}
+
+async function freigabeberichtPruefen(doc, opts = {}) {
+  const checks = [];
+  const warnungen = [];
+  const add = (id, label, ok, detail = "") => checks.push({ id, label, ok: Boolean(ok), detail });
+  const abbruch = (text) => {
+    add("format", "Form des Freigabeberichts", false, text);
+    return { ok: false, checks, warnungen, stufe: 0, stufeText: "Nicht prüfbar", ausgeschlossen: false, freigaben: [] };
+  };
+  try {
+    if (!doc || doc.schema !== BERICHT_SCHEMA) return abbruch("Unbekanntes Format.");
+    if (typeof doc.objektId !== "string" || doc.objektId.length === 0 || !Array.isArray(doc.auskuenfte) || doc.auskuenfte.length > MAX_HUETER) return abbruch("Objekt oder Auskünfte fehlen.");
+    if (!Array.isArray(opts.hueter) || opts.hueter.length === 0) return abbruch("Es sind keine Schlüsselhüter festgelegt. Ohne sie lässt sich nichts schließen.");
+    const hueter = await huetersLesen(opts.hueter);
+    const n = hueter.size;
+    const k = Number.isInteger(opts.hueterSchwelle) ? opts.hueterSchwelle : doc.schwelle;
+    if (!Number.isInteger(k) || k < 1 || k > n) return abbruch("Die Schwelle der Hüter fehlt oder ist unzulässig.");
+
+    const gueltig = new Map();
+    const probleme = [];
+    for (const a of doc.auskuenfte) {
+      let grund = "";
+      if (!a || a.schema !== AUSKUNFT_SCHEMA || typeof a.hueter !== "string" || !Array.isArray(a.quittungen) || a.quittungen.length > MAX_QUITTUNGEN) grund = "Form";
+      else if (gueltig.has(a.hueter)) grund = "doppelt";
+      else if (a.objektId !== doc.objektId) grund = "betrifft ein anderes Objekt";
+      else if (!(await signiertPruefen(a, hueter))) grund = "Signatur oder Hüter unbekannt";
+      else if (!a.quittungen.every((q) => q && istHex(q.anfrageHash, 64) && Number.isInteger(q.at))) grund = "Eine Quittung in der Liste ist unvollständig";
+      if (grund) probleme.push(`${a?.hueter ?? "?"}: ${grund}`);
+      else gueltig.set(a.hueter, a);
+    }
+    const noetig = n - k + 1;
+    add("auskuenfte", `${gueltig.size} von mindestens ${noetig} nötigen Auskünften der ${n} festgelegten Hüter sind gültig (bei Schwelle ${k} von ${n} bleiben dann höchstens ${k - 1} Hüter ohne Auskunft)`, gueltig.size >= noetig, probleme.join("; "));
+
+    const proAnfrage = new Map();
+    for (const [name, a] of gueltig) {
+      for (const q of a.quittungen) {
+        const menge = proAnfrage.get(q.anfrageHash) ?? new Set();
+        menge.add(name);
+        proAnfrage.set(q.anfrageHash, menge);
+      }
+    }
+    const unterschlagen = [];
+    for (const q of Array.isArray(doc.weitereQuittungen) ? doc.weitereQuittungen.slice(0, MAX_QUITTUNGEN) : []) {
+      if (!q || q.schema !== QUITTUNG_SCHEMA || q.objektId !== doc.objektId || !istHex(q.anfrageHash, 64) || !(await signiertPruefen(q, hueter))) continue;
+      const auskunft = gueltig.get(q.hueter);
+      if (auskunft && !auskunft.quittungen.some((x) => x.anfrageHash === q.anfrageHash)) unterschlagen.push(q.hueter);
+      if (!auskunft) {
+        const menge = proAnfrage.get(q.anfrageHash) ?? new Set();
+        menge.add(q.hueter);
+        proAnfrage.set(q.anfrageHash, menge);
+      }
+    }
+    if (Array.isArray(doc.weitereQuittungen) && doc.weitereQuittungen.length > 0) add("widerspruch", "Keine Auskunft verschweigt eine Quittung, die derselbe Hüter selbst unterschrieben hat", unterschlagen.length === 0, unterschlagen.length ? `Auskunft von ${[...new Set(unterschlagen)].join(", ")} widerspricht der eigenen Quittung` : "");
+    const ohneAuskunft = n - gueltig.size;
+    const freigaben = [];
+    for (const [anfrageHash, menge] of proAnfrage) {
+      const bekannt = menge.size;
+      freigaben.push({ anfrageHash, hueter: [...menge], sicher: bekannt >= k, moeglich: bekannt + ohneAuskunft >= k });
+    }
+    const ausgeschlossen = gueltig.size >= noetig && freigaben.every((f) => !f.moeglich);
+    add("schluss", ausgeschlossen ? `Für „${doc.objektId}“ konnte kein Schlüssel freigegeben werden: Weniger als ${k} Hüter können eine Quittung ausgestellt haben` : `Für „${doc.objektId}“ ist eine Freigabe nicht ausgeschlossen`, true, ausgeschlossen ? "" : `${freigaben.filter((f) => f.sicher).length} Anfragen haben Quittungen von mindestens ${k} Hütern, ${freigaben.filter((f) => !f.sicher && f.moeglich).length} weitere sind möglich.`);
+
+    if (doc.aussage) {
+      const aussage = await aussagePruefen(doc.aussage, { ...opts, hueter: undefined });
+      for (const c of aussage.checks.filter((x) => !x.ok)) add(`aussage_${c.id}`, c.label, false, c.detail);
+      add("aussage", "Die Aussage über das Protokoll zu diesem Objekt besteht", aussage.ok, aussage.ok ? "" : "Die Aussage ist nicht gültig.");
+      const imProtokoll = new Set();
+      for (const a of doc.aussage.aussagen ?? []) for (const h of a.ereignisse ?? []) imProtokoll.add(h);
+      const fehlend = freigaben.filter((f) => !imProtokoll.has(f.anfrageHash));
+      add("protokolliert", `Jede Quittung gehört zu einem Ereignis, das im Protokoll steht (${freigaben.length - fehlend.length} von ${freigaben.length})`, fehlend.length === 0, fehlend.map((f) => `${f.anfrageHash.slice(0, 16)}…`).join(", "));
+    } else if (opts.aussageVerlangen) add("aussage", "Dem Bericht liegt eine Aussage über das Protokoll bei, wie verlangt", false, "Die Aussage fehlt.");
+    else if (freigaben.length > 0) warnungen.push("Dem Bericht liegt keine Aussage über das Protokoll bei. Es wurde nicht geprüft, ob zu jeder Quittung ein Ereignis im Protokoll steht.");
+
+    warnungen.push("Die Auskünfte sind Zusagen der Hüter. Ein Hüter, der eine falsche Auskunft unterschreibt, ist daran erkennbar, sobald jemand mit einer Quittung dagegenhält. Der Schluss gilt nur, wenn weniger als die Schwelle der Hüter zusammenarbeiten.");
+    warnungen.push("Ausgeschlossen ist die Freigabe über diesen Weg. Wer Klartext schon vor Einführung der Hüter hatte oder ihn auf anderem Weg beschafft hat, wird davon nicht erfasst.");
+    const ok = checks.every((c) => c.ok);
+    return { ok, checks, warnungen, stufe: ok ? 1 : 0, stufeText: ok ? "Hüter festgelegt" : "Nicht bestanden", ausgeschlossen: ok && ausgeschlossen, freigaben, hueterAntwortete: [...gueltig.keys()], n, k };
+  } catch (err) {
+    return abbruch(`Unerwarteter Fehler beim Prüfen: ${String(err?.message ?? err)}`);
+  }
+}
+
+
+return { FREIGABE_SCHEMA, AUSKUNFT_SCHEMA, BERICHT_SCHEMA, QUITTUNG_SCHEMA, ohneSignatur, huetersLesen, ereignisLesen, freigabePruefen, freigabeberichtPruefen, hex };
+})();
+
+const M_erneuerung_js = (() => {
+const { unhex, sha256Bytes, hex } = M_merkle_js;
+const { schluesselLesen, notizLesen, base64Decode, TYP_ED25519, TYP_SLH } = M_note_js;
+const { slhPruefen } = M_slhdsa_js;
+const { bitcoinKopfPruefen, STANDARD_MINDESTARBEIT_BITS } = M_zeitanker_js;
+const { otsAuswerten, merkleWurzelAusKopf } = M_zeitbeweis_js;
+const { pruefpunktPruefen, canonicalJson } = M_pruefer_kern_js;
+const { stufeBestimmen } = M_aussage_js;
+
+const ERNEUERUNG_SCHEMA = "defconder-erneuerung-1";
+const GLIED_SCHEMA = "defconder-erneuerungsglied-1";
+const ERNEUERUNG_KONTEXT = "defconder-erneuerung-1";
+const encoder = new TextEncoder();
+const MAX_GLIEDER = 64;
+const ZWEI_STUNDEN_MS = 2 * 60 * 60 * 1000;
+
+function gliedKern(glied) {
+  const kopie = { ...glied };
+  delete kopie.signatur;
+  delete kopie.zeitbeweis;
+  return kopie;
+}
+
+async function gliedDigest(glied) {
+  const ohneZeit = { ...glied };
+  delete ohneZeit.zeitbeweis;
+  return sha256Bytes(encoder.encode(canonicalJson(ohneZeit)));
+}
+
+function verfahrenVon(schluessel) {
+  return schluessel.typ === TYP_SLH ? `slh-dsa-${schluessel.verfahren}` : "ed25519";
+}
+
+async function signaturPruefen(schluessel, nachricht, signaturHex) {
+  try {
+    if (typeof signaturHex !== "string" || !/^[0-9a-f]+$/.test(signaturHex) || signaturHex.length % 2 !== 0) return false;
+    const signatur = unhex(signaturHex);
+    if (schluessel.typ === TYP_SLH) return slhPruefen(schluessel.verfahren, schluessel.publicKey, nachricht, signatur, ERNEUERUNG_KONTEXT);
+    const key = await globalThis.crypto.subtle.importKey("raw", schluessel.publicKey, { name: "Ed25519" }, false, ["verify"]);
+    return await globalThis.crypto.subtle.verify({ name: "Ed25519" }, key, signatur, nachricht);
+  } catch {
+    return false;
+  }
+}
+
+async function zeitFuer(digest, glied, opts) {
+  const z = glied.zeitbeweis;
+  if (!z || typeof z.ots !== "string" || typeof z.koepfe !== "object" || z.koepfe === null) return { fehlt: true };
+  const ots = await otsAuswerten(base64Decode(z.ots));
+  if (hex(ots.digest) !== hex(digest)) return { fehler: "Der Zeitbeweis bezieht sich nicht auf dieses Glied." };
+  let bester = null;
+  for (const a of ots.attestierungen) {
+    if (a.art !== "bitcoin") continue;
+    const kopfHex = z.koepfe[String(a.hoehe)];
+    if (typeof kopfHex !== "string") continue;
+    const kopf = await bitcoinKopfPruefen(kopfHex, { mindestArbeitBits: opts.mindestArbeitBits ?? STANDARD_MINDESTARBEIT_BITS });
+    if (!kopf.ok || hex(merkleWurzelAusKopf(kopfHex)) !== hex(a.nachricht)) continue;
+    if (!bester || kopf.blockZeit < bester.blockZeit) bester = { hoehe: a.hoehe, blockZeit: kopf.blockZeit };
+  }
+  if (!bester) return { fehler: "Keine gültige Bestätigung durch Bitcoin." };
+  return { spaetestens: bester.blockZeit + ZWEI_STUNDEN_MS, hoehe: bester.hoehe };
+}
+
+async function erneuerungPruefen(doc, opts = {}) {
+  const checks = [];
+  const warnungen = [];
+  const add = (id, label, ok, detail = "") => checks.push({ id, label, ok: Boolean(ok), detail });
+  const abbruch = (text) => {
+    add("format", "Form der Beweiserneuerung", false, text);
+    return { ok: false, checks, warnungen, stufe: 0, stufeText: "Nicht prüfbar", glieder: [] };
+  };
+  try {
+    if (!doc || doc.schema !== ERNEUERUNG_SCHEMA) return abbruch("Unbekanntes Format.");
+    if (typeof doc.notiz !== "string" || !Array.isArray(doc.glieder) || doc.glieder.length === 0 || doc.glieder.length > MAX_GLIEDER) return abbruch("Prüfpunkt oder Glieder fehlen.");
+    const festgelegt = Boolean(opts.logSchluessel);
+    const logSchluessel = opts.logSchluessel ?? doc.logSchluessel;
+    if (typeof logSchluessel !== "string") return abbruch("Es steht kein Schlüssel des Protokolls zur Verfügung.");
+    const punktErgebnis = await pruefpunktPruefen(doc.notiz, { ...opts, logSchluessel });
+    for (const c of punktErgebnis.checks) add(`punkt_${c.id}`, c.label, c.ok, c.detail);
+    if (!punktErgebnis.punkt) return { ok: false, checks, warnungen, stufe: 0, stufeText: "Nicht bestanden", glieder: [] };
+
+    const vertraut = new Map();
+    for (const text of [opts.logSchluessel, opts.logSchluesselPq, ...(opts.erneuerungsSchluessel ?? [])]) {
+      if (typeof text !== "string") continue;
+      const s = await schluesselLesen(text);
+      vertraut.set(`${s.name}|${s.kennung}`, s);
+    }
+    const gebunden = (opts.erneuerungsSchluessel ?? []).length > 0 || Boolean(opts.logSchluesselPq);
+
+    let vorher = hex(await sha256Bytes(encoder.encode(notizLesen(doc.notiz).koerper)));
+    let letzteZeit = -1;
+    const ergebnisse = [];
+    for (const [i, g] of doc.glieder.entries()) {
+      const name = `Glied ${i + 1}`;
+      if (!g || g.schema !== GLIED_SCHEMA || typeof g.schluessel !== "string" || !Number.isInteger(g.zeit) || typeof g.vorher !== "string") {
+        add("glied", `${name} hat die erwartete Form`, false, "");
+        break;
+      }
+      const verkettet = g.vorher === vorher;
+      add("glied_kette", `${name} nennt die Prüfsumme des ${i === 0 ? "ursprünglichen Prüfpunkttextes" : "vorigen Gliedes"}`, verkettet, verkettet ? "" : "Die Kette ist unterbrochen.");
+      let schluessel = null;
+      try {
+        schluessel = await schluesselLesen(g.schluessel);
+      } catch (err) {
+        add("glied_schluessel", `${name}: Der Schlüssel ist lesbar`, false, String(err.message ?? err));
+      }
+      const bekannt = schluessel && vertraut.has(`${schluessel.name}|${schluessel.kennung}`);
+      if (schluessel) add("glied_schluessel", `${name}: Der Schlüssel (${verfahrenVon(schluessel)}) gehört zu den festgelegten Schlüsseln`, bekannt || !gebunden, bekannt ? "" : "Der Schlüssel ist nicht festgelegt.");
+      const sigOk = schluessel ? await signaturPruefen(schluessel, encoder.encode(canonicalJson(gliedKern(g))), g.signatur) : false;
+      add("glied_signatur", `${name}: Die Signatur ist gültig`, sigOk, "");
+      const steigend = g.zeit > letzteZeit;
+      add("glied_zeit", `${name}: Die genannte Zeit liegt nach der des vorigen Gliedes`, steigend, "");
+      letzteZeit = g.zeit;
+      let spaetestens = null;
+      try {
+        const z = await zeitFuer(await gliedDigest(g), g, opts);
+        if (z.fehlt) warnungen.push(`${name} trägt keinen Zeitbeweis. Ohne ihn lässt sich nicht zeigen, dass die Erneuerung rechtzeitig geschah.`);
+        else if (z.fehler) add("glied_zeitbeweis", `${name}: Der Zeitbeweis ist gültig`, false, z.fehler);
+        else {
+          spaetestens = z.spaetestens;
+          add("glied_zeitbeweis", `${name} bestand spätestens am ${new Date(z.spaetestens).toISOString()} (Bitcoin-Block ${z.hoehe})`, true, "");
+          if (g.zeit > z.spaetestens) add("glied_zeitpassung", `${name}: Die genannte Zeit liegt nicht nach dem bestätigten Zeitpunkt`, false, "Die genannte Zeit ist später als der Beweis zulässt.");
+        }
+      } catch (err) {
+        add("glied_zeitbeweis", `${name}: Der Zeitbeweis ist lesbar`, false, String(err.message ?? err));
+      }
+      ergebnisse.push({ verfahren: schluessel ? verfahrenVon(schluessel) : null, zeit: g.zeit, spaetestens });
+      vorher = hex(await gliedDigest(g));
+    }
+
+    if (opts.bruchAnnahme && typeof opts.bruchAnnahme === "object") {
+      const verfahrenGebrochen = (v, zeitpunkt) => {
+        const grenze = opts.bruchAnnahme[v];
+        return grenze !== undefined && zeitpunkt >= grenze;
+      };
+      for (const [alt, grenze] of Object.entries(opts.bruchAnnahme)) {
+        const schutz = ergebnisse.find((e) => e.verfahren && e.verfahren !== alt && e.spaetestens !== null && e.spaetestens <= grenze && !verfahrenGebrochen(e.verfahren, e.spaetestens));
+        add("bruchfest", `Der Prüfpunkt war vor dem angenommenen Bruch von ${alt} (${new Date(grenze).toISOString().slice(0, 10)}) durch ein Glied anderer Art gesichert`, Boolean(schutz), schutz ? `${schutz.verfahren}, bestätigt spätestens ${new Date(schutz.spaetestens).toISOString()}` : "Kein Glied mit Zeitbeweis vor diesem Zeitpunkt.");
+      }
+    } else warnungen.push("Es wurde kein Zeitpunkt für den Bruch eines Verfahrens angenommen. Die Prüfung zeigt dann nur, dass die Kette in sich stimmt (Option --bruch).");
+
+    warnungen.push("Die Erneuerung schützt davor, dass jemand nach dem Bruch eines Verfahrens einen Prüfpunkt rückdatiert. Sie zeigt nicht, dass der Inhalt des Prüfpunkts wahr ist.");
+    if (!gebunden) warnungen.push("Es sind keine Schlüssel für die Erneuerung festgelegt. Die Kette zeigt nur, dass sie in sich stimmig ist, nicht, dass der Betreiber sie unterschrieben hat.");
+    const intern = checks.every((c) => c.ok);
+    let { stufe, stufeText } = stufeBestimmen(intern, festgelegt, punktErgebnis);
+    if (!gebunden && stufe > 1) {
+      stufe = 1;
+      stufeText = "Prüfpunkt gebunden, Erneuerungsschlüssel nicht festgelegt";
+    }
+    if (intern && Number.isInteger(opts.mindestStufe) && stufe < opts.mindestStufe) add("mindeststufe", `Mindestens Vertrauensstufe ${opts.mindestStufe} verlangt`, false, `erreicht ist Stufe ${stufe}`);
+    const ok = checks.every((c) => c.ok);
+    return { ok, checks, warnungen, stufe, stufeText: ok ? stufeText : "Nicht bestanden", glieder: ergebnisse, pq: punktErgebnis.pq, punkt: punktErgebnis.punkt };
+  } catch (err) {
+    return abbruch(`Unerwarteter Fehler beim Prüfen: ${String(err?.message ?? err)}`);
+  }
+}
+
+
+return { ERNEUERUNG_SCHEMA, GLIED_SCHEMA, ERNEUERUNG_KONTEXT, gliedKern, gliedDigest, verfahrenVon, erneuerungPruefen, TYP_ED25519 };
+})();
+
 const M_bericht_js = (() => {
 const ARTEN = {
   paket: "Beweispaket",
   aussage: "Aussage über das Protokoll",
   entscheidung: "Entscheidungsnachweis",
   pruefpunkt: "Prüfpunkt",
+  zeitbeweis: "Zeitbeweis",
+  stichprobe: "Stichprobe",
+  freigabe: "Freigabenachweis",
+  freigabebericht: "Freigabebericht",
+  erneuerung: "Beweiserneuerung",
 };
 
 function nichtBestanden(ergebnis) {
@@ -1419,6 +2955,16 @@ function berichtErzeugen(art, ergebnis) {
     return bericht;
   }
 
+  if (art === "freigabebericht") {
+    bericht.ergebnis = ergebnis.ausgeschlossen ? "Für dieses Objekt wurde kein Schlüssel freigegeben." : "Für dieses Objekt ist eine Freigabe belegt oder nicht ausgeschlossen.";
+    if (ergebnis.ausgeschlossen) bericht.bewiesen.push(`${ergebnis.hueterAntwortete.length} von ${ergebnis.n} Hütern (Schwelle ${ergebnis.k}) haben unterschrieben, dass sie keine Quittung für dieses Objekt ausgestellt haben. Die übrigen Hüter reichen allein nicht für einen Schlüssel.`);
+    for (const f of ergebnis.freigaben ?? []) bericht.bewiesen.push(`Anfrage ${f.anfrageHash.slice(0, 16)}…: Quittungen von ${f.hueter.join(", ")}${f.sicher ? " (genug für eine Freigabe)" : f.moeglich ? " (eine Freigabe ist möglich)" : ""}.`);
+    bericht.nichtBewiesen.push("Dass die Hüter ehrlich Auskunft gegeben haben. Eine falsche Auskunft fällt auf, sobald jemand eine Quittung desselben Hüters dagegenhält.");
+    bericht.nichtBewiesen.push("Dass der Klartext nicht auf einem anderen Weg beschafft wurde, etwa vor Einführung der Hüter oder aus einer Kopie.");
+    bericht.gegnerBraeuchte.push("Ein Gegner bräuchte so viele Hüter auf seiner Seite, wie die Schwelle verlangt, oder müsste eine falsche Auskunft unterschreiben lassen, die durch eine Quittung auffliegt.");
+    bericht.hinweise.push(...(ergebnis.warnungen ?? []));
+    return bericht;
+  }
   const stufe = ergebnis.stufe ?? 0;
   if (stufe === 0) {
     bericht.ergebnis = "In sich stimmig (Stufe 0). Das Dokument ist seit seiner Erstellung unverändert.";
@@ -1444,6 +2990,15 @@ function berichtErzeugen(art, ergebnis) {
     bericht.gegnerBraeuchte.push("Wurde ein Zeuge zum allerersten Stand des Protokolls erst nach einer Fälschung hinzugezogen, fällt diese Fälschung nicht auf.");
   }
 
+  if (stufe >= 1) {
+    if (ergebnis.pq === true) {
+      bericht.bewiesen.push("Der Prüfpunkt trägt zusätzlich eine hashbasierte Signatur (SLH-DSA, nur auf SHA-256 gestützt), die ein künftiger Quantencomputer nicht fälschen kann, solange SHA-256 hält.");
+      bericht.nichtBewiesen.push("Dass die Gegenzeichnungen der Zeugen quantensicher sind. Sie beruhen auf Ed25519.");
+    } else {
+      bericht.hinweise.push("Die Signaturen dieses Dokuments beruhen auf Ed25519. Ein künftiger Quantencomputer könnte sie fälschen. Schutz bieten eine hashbasierte Signatur des Protokolls (Option --log-schluessel-pq) und ein Zeitanker, der zeigt, dass der Prüfpunkt früher bestand.");
+    }
+  }
+
   if (art === "paket") {
     bericht.nichtBewiesen.push("Dass das Protokoll alle Ereignisse zur Datei enthält. Ein Paket zeigt nur die Ereignisse, die der Betreiber beigelegt hat.");
     const auszuege = ergebnis.checks.find((c) => c.id === "ereignisse" && /als Auszug/.test(c.label));
@@ -1453,6 +3008,38 @@ function berichtErzeugen(art, ergebnis) {
     bericht.bewiesen.push(...(ergebnis.aussagen ?? []).filter((a) => a.ok).map((a) => a.text));
     bericht.nichtBewiesen.push("Dass der Index vollständig aus dem Protokoll abgeleitet wurde. Das lässt sich nur durch Nachrechnen mit dem vollständigen Protokoll prüfen, zum Beispiel mit dem Beobachter.");
     bericht.nichtBewiesen.push("Dass ein Ereignis nicht doch unter einem Schlüssel steht, den die Indexregeln nicht vorsehen.");
+  }
+  if (art === "zeitbeweis") {
+    if (ergebnis.spaetestens) bericht.bewiesen.push(`Der signierte Text des Prüfpunkts bestand spätestens am ${new Date(ergebnis.spaetestens).toISOString()}. Ein später erzeugter Prüfpunkt, etwa mit einer gefälschten Signatur, kann diesen Beweis nicht nachholen.`);
+    if (ergebnis.fruehestens) bericht.bewiesen.push(`Der Prüfpunkt entstand frühestens am ${new Date(ergebnis.fruehestens).toISOString()}, denn er nennt einen Bitcoin-Block, der damals schon bestand.`);
+    bericht.nichtBewiesen.push("Dass der Inhalt des Prüfpunkts wahr oder vollständig ist.");
+    bericht.nichtBewiesen.push("Den genauen Zeitpunkt. Blockzeiten sind nur auf etwa zwei Stunden genau.");
+    bericht.gegnerBraeuchte.push("Ein Gegner müsste einen Bitcoin-Block mit passender Transaktionswurzel erzeugen, das kostet die gesamte Rechenarbeit des Netzes.");
+  }
+  if (art === "erneuerung") {
+    const liste = ergebnis.glieder ?? [];
+    bericht.bewiesen.push(`Der Prüfpunkt wurde ${liste.length} Mal erneuert: ${liste.map((g) => `${g.verfahren ?? "unbekannt"}${g.spaetestens ? ` (bestätigt spätestens ${new Date(g.spaetestens).toISOString().slice(0, 10)})` : " (ohne Zeitbeweis)"}`).join(", dann ")}.`);
+    for (const c of ergebnis.checks.filter((x) => x.id === "bruchfest" && x.ok)) bericht.bewiesen.push(c.label + ".");
+    bericht.nichtBewiesen.push("Dass der Inhalt des Prüfpunkts wahr ist. Die Erneuerung hält nur den Beweiswert über den Bruch eines Verfahrens hinaus.");
+    bericht.nichtBewiesen.push("Dass ein Verfahren nicht schon früher gebrochen wurde, als Sie angenommen haben.");
+    bericht.gegnerBraeuchte.push("Ein Gegner müsste vor der Erneuerung das ursprüngliche Verfahren brechen oder gleichzeitig das erneuernde Verfahren und den Bitcoin-Zeitbeweis überwinden.");
+  }
+  if (art === "freigabe" && ergebnis.anfrage) {
+    bericht.bewiesen.push(`Die Anfrage nach ${ergebnis.anfrage.objektId} (Ereignis ${ergebnis.anfrage.seq}) stand im Protokoll, bevor ${ergebnis.gueltigeHueter.length} festgelegte Hüter (${ergebnis.gueltigeHueter.join(", ")}) ihren Anteil am Schlüssel herausgaben. Zum Entschlüsseln braucht es ${ergebnis.schwelle}.`);
+    bericht.nichtBewiesen.push("Dass die Hüter nicht zusammengearbeitet haben. Mit so vielen Hütern, wie die Schwelle verlangt, und dem Betreiber ließe sich eine Freigabe ohne Eintrag erzwingen.");
+    bericht.nichtBewiesen.push("Dass der Empfänger den Klartext nicht weitergegeben hat. Das Protokoll zeigt den Zugriff, es verhindert kein Kopieren danach.");
+    bericht.gegnerBraeuchte.push(`Ein Gegner bräuchte ${ergebnis.schwelle} Hüter auf seiner Seite oder den Schlüssel selbst. Er kann dann entschlüsseln, ohne dass ein Eintrag entsteht.`);
+  }
+  if (art === "stichprobe" && ergebnis.stichprobe) {
+    const s = ergebnis.stichprobe;
+    const prozent = (x) => `${(Math.ceil(x * 1e6) / 1e4).toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} %`;
+    if (s.obergrenze !== null) {
+      bericht.bewiesen.push(`Aus dem Protokoll bis Größe ${s.groesse} wurden mit dem Zufall aus einem Bitcoin-Block ${s.gezogen} Ereignisse gezogen (${s.verschieden} verschiedene). Bei allen stimmten die geprüften Eigenschaften.`);
+      bericht.bewiesen.push(`Mit ${Math.round(s.konfidenz * 1000) / 10} % Sicherheit liegt der Anteil der Ereignisse, die eine der geprüften Eigenschaften verletzen, unter ${prozent(s.obergrenze)}.`);
+    }
+    if (s.einzelverstossUnentdeckt !== null && s.einzelverstossUnentdeckt !== undefined) bericht.nichtBewiesen.push(`Dass kein einzelnes Ereignis die Eigenschaften verletzt. Ein einzelner Verstoß bliebe mit Wahrscheinlichkeit ${(Math.floor(s.einzelverstossUnentdeckt * 10000) / 100).toLocaleString("de-DE")} % unentdeckt.`);
+    bericht.gegnerBraeuchte.push("Der Betreiber müsste den Block mit dem Zufall vorhersagen oder mehrere Prüfpunkte vorbereiten und von den Zeugen bestätigen lassen. Das scheitert, wenn die Zeugen nur einen Stand bestätigen, der lückenlos aus dem vorigen folgt.");
+    if (s.fehler && (s.fehler.kette.length || s.fehler.index.length || s.fehler.entscheidung.length)) bericht.fehlgeschlagen.push(...s.fehler.kette, ...s.fehler.index, ...s.fehler.entscheidung);
   }
   if (art === "entscheidung") {
     for (const b of ergebnis.belege ?? []) {
@@ -1488,13 +3075,35 @@ const { verifyPackage, pruefpunktPruefen } = M_pruefer_kern_js;
 const { aussagePruefen } = M_aussage_js;
 const { entscheidungPruefen } = M_entscheidung_js;
 const { widerspruchPruefen } = M_widerspruch_js;
+const { zeitbeweisPruefen } = M_zeitbeweis_js;
+const { stichprobePruefen } = M_stichprobe_js;
+const { freigabePruefen, freigabeberichtPruefen } = M_freigabe_js;
+const { erneuerungPruefen } = M_erneuerung_js;
 const { berichtErzeugen, berichtText } = M_bericht_js;
 
 const zeilen = (id) => document.getElementById(id).value.split(/\r?\n/).map((z) => z.trim()).filter(Boolean);
+function bruchLesen() {
+  const zeilenListe = zeilen("bruch");
+  if (!zeilenListe.length) return undefined;
+  const ergebnis = {};
+  for (const z of zeilenListe) {
+    const [verfahren, datum] = z.split("=");
+    const zeit = Date.parse(datum + "T00:00:00Z");
+    if (verfahren && !Number.isNaN(zeit)) ergebnis[verfahren.trim()] = zeit;
+  }
+  return ergebnis;
+}
 const optionen = () => ({
   pinnedKeyIds: zeilen("kennungen"),
   logSchluessel: zeilen("logschluessel")[0],
+  logSchluesselPq: zeilen("logschluesselpq")[0],
   zeugen: zeilen("zeugen"),
+  hueter: zeilen("hueter").length ? zeilen("hueter") : undefined,
+  hueterSchwelle: Number(document.getElementById("hueterschwelle").value) || undefined,
+  erneuerungsSchluessel: zeilen("erneuerungsschluessel").length ? zeilen("erneuerungsschluessel") : undefined,
+  bruchAnnahme: bruchLesen(),
+  mindestAnzahl: document.getElementById("mindestanzahl").value === "" ? undefined : Number(document.getElementById("mindestanzahl").value),
+  mindestAbstand: document.getElementById("mindestabstand").value === "" ? undefined : Number(document.getElementById("mindestabstand").value),
   schwelle: Number(document.getElementById("schwelle").value) || undefined,
   mindestArbeitBits: document.getElementById("arbeit").value === "" ? undefined : Number(document.getElementById("arbeit").value),
   mindestStufe: document.getElementById("mindeststufe").value === "" ? undefined : Number(document.getElementById("mindeststufe").value),
@@ -1586,6 +3195,11 @@ los.addEventListener("click", async () => {
     const bytes = original.files.length ? new Uint8Array(await original.files[0].arrayBuffer()) : null;
     if (doc?.schema === "defconder-aussage-1") ergebnisAnzeigen(ausgabe, "aussage", await aussagePruefen(doc, optionen()), "Alle Prüfungen bestanden.", "Mindestens eine Prüfung ist fehlgeschlagen.");
     else if (doc?.schema === "defconder-entscheidung-1") ergebnisAnzeigen(ausgabe, "entscheidung", await entscheidungPruefen(doc, optionen()), "Alle Prüfungen bestanden.", "Mindestens eine Prüfung ist fehlgeschlagen.");
+    else if (doc?.schema === "defconder-zeitbeweis-1") ergebnisAnzeigen(ausgabe, "zeitbeweis", await zeitbeweisPruefen(doc, optionen()), "Alle Prüfungen bestanden.", "Mindestens eine Prüfung ist fehlgeschlagen.");
+    else if (doc?.schema === "defconder-stichprobe-1") ergebnisAnzeigen(ausgabe, "stichprobe", await stichprobePruefen(doc, optionen()), "Alle Prüfungen bestanden.", "Mindestens eine Prüfung ist fehlgeschlagen.");
+    else if (doc?.schema === "defconder-freigabe-1") ergebnisAnzeigen(ausgabe, "freigabe", await freigabePruefen(doc, optionen()), "Alle Prüfungen bestanden.", "Mindestens eine Prüfung ist fehlgeschlagen.");
+    else if (doc?.schema === "defconder-freigabebericht-1") ergebnisAnzeigen(ausgabe, "freigabebericht", await freigabeberichtPruefen(doc, optionen()), "Alle Prüfungen bestanden.", "Mindestens eine Prüfung ist fehlgeschlagen.");
+    else if (doc?.schema === "defconder-erneuerung-1") ergebnisAnzeigen(ausgabe, "erneuerung", await erneuerungPruefen(doc, optionen()), "Alle Prüfungen bestanden.", "Mindestens eine Prüfung ist fehlgeschlagen.");
     else if (doc?.schema === "defconder-widerspruch-1") {
       const r = await widerspruchPruefen(doc, optionen());
       ergebnisAnzeigen(ausgabe, null, r, r.text, r.text);

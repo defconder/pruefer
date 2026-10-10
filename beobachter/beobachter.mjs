@@ -52,14 +52,14 @@ export async function nachrechnen(logText, punktText) {
     befunde.push("Der Prüfpunkt enthält keinen Index, der Index wurde nicht geprüft.");
   }
   if (indexZeile) {
-    const index = await indexAufbauen(deckung);
+    const index = await indexAufbauen(deckung, indexZeile.regeln);
     if (index.wurzel !== indexZeile.wurzelHex || index.anzahl !== indexZeile.anzahl) alarme.push({ art: "index", text: `Der Index im Prüfpunkt lässt sich nicht aus dem Protokoll ableiten: berechnet ${index.anzahl} Einträge, Wurzel ${index.wurzel.slice(0, 16)}…, im Prüfpunkt ${indexZeile.anzahl} Einträge, Wurzel ${indexZeile.wurzelHex.slice(0, 16)}….` });
     else befunde.push(`Der Index mit ${index.anzahl} Einträgen wurde vollständig aus dem Protokoll nachgerechnet und stimmt mit dem Prüfpunkt überein.`);
   }
   return { alarme, befunde };
 }
 
-export async function beobachte({ quelle, logSchluessel, zeugen = [], schwelle, dir, holen = standardHolen, token = null, jetzt = () => Date.now(), feedPruefen = false, logDatei = null, mindestArbeitBits }) {
+export async function beobachte({ quelle, logSchluessel, logSchluesselPq, zeugen = [], schwelle, dir, holen = standardHolen, token = null, jetzt = () => Date.now(), feedPruefen = false, logDatei = null, mindestArbeitBits }) {
   const verzeichnis = resolve(dir);
   if (!existsSync(verzeichnis)) mkdirSync(verzeichnis, { recursive: true });
   const zustandPfad = join(verzeichnis, "zustand.json");
@@ -85,7 +85,7 @@ export async function beobachte({ quelle, logSchluessel, zeugen = [], schwelle, 
   const antwort = await holen(url("/transparenz/pruefpunkt"));
   if (antwort.status !== 200) throw new Error(`Der Prüfpunkt war nicht abrufbar (${antwort.status}).`);
   const neuText = antwort.text;
-  const pruefung = await pruefpunktPruefen(neuText, { logSchluessel, zeugen, schwelle, mindestArbeitBits });
+  const pruefung = await pruefpunktPruefen(neuText, { logSchluessel, logSchluesselPq, zeugen, schwelle, mindestArbeitBits });
   if (!pruefung.punkt) throw new Error("Der Prüfpunkt ist unlesbar.");
   const logOk = pruefung.checks.find((c) => c.id === "log")?.ok;
   if (!logOk) {
@@ -195,6 +195,7 @@ function argumente(liste) {
     const a = liste[i];
     if (a === "--quelle") opts.quelle = liste[(i += 1)];
     else if (a === "--log") opts.logSchluessel = liste[(i += 1)];
+    else if (a === "--log-pq") opts.logSchluesselPq = liste[(i += 1)];
     else if (a === "--zeuge") opts.zeugen.push(liste[(i += 1)]);
     else if (a === "--schwelle") opts.schwelle = Number(liste[(i += 1)]);
     else if (a === "--dir") opts.dir = liste[(i += 1)];
@@ -205,7 +206,7 @@ function argumente(liste) {
     else if (a === "--feed-pruefen") opts.feedPruefen = true;
     else if (a === "--tls-pruefung-aus") opts.tlsPruefungAus = true;
     else {
-      console.log("Aufruf: node beobachter.mjs --quelle <Adresse des Betreibers> --log <Schluessel des Protokolls> [--zeuge <Schluessel> ...] [--schwelle N] [--dir ./beobachter-daten] [--intervall Sekunden] [--einmal] [--feed-pruefen] [--nachrechnen <event-log.jsonl>] [--token <Sitzungstoken>] [--tls-pruefung-aus]");
+      console.log("Aufruf: node beobachter.mjs --quelle <Adresse des Betreibers> --log <Schluessel des Protokolls> [--log-pq <hashbasierter Schluessel>] [--zeuge <Schluessel> ...] [--schwelle N] [--dir ./beobachter-daten] [--intervall Sekunden] [--einmal] [--feed-pruefen] [--nachrechnen <event-log.jsonl>] [--token <Sitzungstoken>] [--tls-pruefung-aus]");
       process.exit(2);
     }
   }

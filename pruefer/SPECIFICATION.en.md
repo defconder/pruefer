@@ -1,6 +1,6 @@
 # Specification of formats and verification steps
 
-Version 0.3. English translation of [SPEZIFIKATION.md](SPEZIFIKATION.md), which is authoritative. This page describes exactly what the verifier computes so that someone can rebuild it in another language. Three implementations (JavaScript, Python, Rust) pass the same test vectors in `testvektoren/`.
+Version 0.4. English translation of [SPEZIFIKATION.md](SPEZIFIKATION.md), which is authoritative. This page describes exactly what the verifier computes so that someone can rebuild it in another language. Three implementations (JavaScript, Python, Rust) pass the same test vectors in `testvektoren/`.
 
 Terms: a hex value is lower case without a prefix. `||` is concatenation. `SHA-256` hashes bytes. Strings are UTF-8. Field and type names in the formats are German identifiers and are kept as they are.
 
@@ -97,6 +97,7 @@ Extension lines are part of the signed text and are cosigned by the witnesses. D
 
 ```
 defconder-index-1 <number of index entries decimal> <index root Base64>
+defconder-index-2 <number of index entries decimal> <index root Base64>
 defconder-zeitanker-1 bitcoin <block header, 160 hex characters>
 ```
 
@@ -194,3 +195,124 @@ The old key signs `canonical({ schema, von, nach, at, entzieht })`. The verifier
 ```
 
 `a` and `b` are checkpoints. A contradiction is proven if both carry the valid log signature, have the same tree size and different roots. Anyone can recompute that. A rollback or a missing consistency proof is not a cryptographic proof, the observer reports it as an alarm with evidence.
+
+
+## 13. Hash-based signature (SLH-DSA)
+
+A log may sign its checkpoint additionally with a hash-based scheme per FIPS 205. The scheme only computes with SHA-256 and stays secure against a quantum computer as long as SHA-256 holds. SLH-DSA-SHA2-128s (signature 7856 bytes) and SLH-DSA-SHA2-128f (17088 bytes) are supported. The external form with a context string (`slh_sign`, `slh_verify`) is used, not the pre-hashed one.
+
+Key: `name+id+Base64( 0xFF || scheme identifier || 0x00 || public key )`. The scheme identifier is the ASCII string `defconder-slh-dsa-sha2-128s-1` or `defconder-slh-dsa-sha2-128f-1`, the public key has 32 bytes (PK.seed || PK.root). Per c2sp.org/signed-note the type byte `0xFF` stands for types without a type byte of their own. The key id is `SHA-256( name || 0x0A || 0xFF || scheme identifier || 0x00 || key )[:4]`.
+
+Signature line: as in section 5, with the signature as value. What is signed is the text of the checkpoint (all bytes up to and including the line break before the blank line) with the context string `defconder-pruefpunkt-1`. The line carries the name of the log and sits after the cosignatures of the witnesses, who never see it. There are no cosignatures by witnesses with a hash-based scheme. For cosignatures C2SP knows the type `0x06` with ML-DSA-44, which the verifier does not check.
+
+Whoever pins a hash-based log key demands exactly one valid signature of that key. If it is missing or invalid, the checkpoint fails. Without a pinned key the line is ignored like any signature of an unknown key.
+
+## 14. Time proof `defconder-zeitbeweis-1`
+
+Proves that a checkpoint existed at the latest at a Bitcoin block time. It adds an upper bound to the lower bound of the time anchor (section 10).
+
+```
+{ schema, notiz, logSchluessel?, ots: Base64(file in the OpenTimestamps format), koepfe: { "<height>": <block header, 160 hex characters> } }
+```
+
+What is stamped is `SHA-256` over the text of the checkpoint as in section 13. The file `ots` starts with the 31 bytes `00 "OpenTimestamps" 00 00 "Proof" 00 BF 89 E2 E8 84 E8 92 94`, then major version 1 (length number in LEB128), the byte `08` (SHA-256), 32 bytes of digest and the tree of steps. A node reads one byte. `FF` announces another branch and the next byte names its kind. `00` is an attestation: 8 bytes of kind, then a payload preceded by its length. All other bytes are operations on the running message:
+
+| Byte | Operation |
+|---|---|
+| `08` | SHA-256 |
+| `03` | RIPEMD-160 |
+| `F0` | append (argument with length number, at least 1 byte) |
+| `F1` | prepend (likewise) |
+| `F2` | reverse the bytes |
+| `F3` | write out as lower-case hex characters |
+
+The verifier rejects SHA-1 (`02`) and Keccak-256 (`67`). After the operation comes the subtree for the result. Attestation kinds: `05 88 96 0D 73 D7 19 01` is Bitcoin (payload the block height as a length number, nothing else), `83 DF E3 0D 2E F9 0C 8E` is pending, other kinds are ignored. Limits: file at most 1000000 bytes, message at most 4096 bytes, depth at most 256, nodes at most 20000, length numbers at most 5 bytes, no bytes after the tree.
+
+For a Bitcoin attestation the message at the end of the path must equal bytes 36 to 67 of the block header at that height. The header must meet its target and carry the minimum work (section 10). The verifier cautiously uses the block time plus two hours as the latest moment. If the checkpoint names a time anchor, lower and upper bound must fit together.
+
+## 15. Audit sample `defconder-stichprobe-1`
+
+Draws events from the log using randomness the operator did not know when committing, and states a bound on the share of violating events from error-free draws.
+
+```
+{ schema, notiz, logSchluessel?, regel: { anzahl, abstand, konfidenz, pruefungen: [ "kette", "index", "entscheidung" ] },
+  zeitbeweis: { ots, koepfe }, zufall: { koepfe: [ block header ] }, proben: [ Probe ] }
+```
+
+`zeitbeweis` confirms the checkpoint (section 14) in a block of height `h`. `zufall.koepfe` are exactly `abstand` block headers of heights `h+1` to `h+abstand`, each with valid work and its predecessor in the `prev` field of the header. The randomness is the block hash of the last header in the usual notation (with leading zeros) as 32 bytes.
+
+```
+seed = SHA-256( "defconder-stichprobe-1" || 0x00 || root of the checkpoint (32) || randomness (32) || tree size (8, big-endian) || anzahl (8, big-endian) )
+draw z = 0, 1, 2, ...: w = first 8 bytes of SHA-256( seed || z (8, big-endian) ) as an unsigned number
+                       limit = floor( 2^64 / tree size ) * tree size
+                       if w >= limit, z is skipped, otherwise w mod tree size is the next draw
+```
+
+There are `anzahl` draws with replacement. `proben` holds exactly one entry per drawn sequence number, ascending:
+
+```
+Probe = { seq, event | auszug, pfad, vorgaenger?: { hash, pfad }, indexBelege?: [ { schluessel, keyHash, anzahl, kette, index, pfad } ], entscheidung?: { ereignisse } }
+```
+
+Depending on `pruefungen` the verifier checks: chain (hash of the event, inclusion at `seq`, for `seq` above 0 the hash of the predecessor equal to `prevHash` with inclusion, for `seq` 0 `prevHash` of 64 zeros), index (for every key of the event a leaf with count at least 1, only for an open event) and decision (every event of the types `AccessDenied` and `FederatedQueryExecuted` carries receipts that a decision proof per section 9 confirms). A single violation makes the sample fail, and it names no bound. Otherwise: with certainty `konfidenz` the share of violating events is below `1 - (1 - konfidenz)^(1/anzahl)`.
+
+The bound says nothing about single rare violations. It only holds if the checkpoint is confirmed by witnesses, otherwise the operator could have prepared several and presented the favourable one later.
+
+## 16. Index rules 2 (count statements)
+
+`indexregeln-2` extends the keys of section 8.1. If an event has a field `at` holding an integer from 0 to 253402300799999 (milliseconds since 1970), let `M` be the calendar month in UTC in the form `YYYY-MM`. To the existing keys come `monat=M` and, for every existing key `K`, the key `K|monat=M`. The key hash starts with `indexregeln-2\n`, the extension line is called `defconder-index-2`. A checkpoint carries exactly one index line, a statement names the same rules as the checkpoint.
+
+A statement without `ereignisse` thus proves the number of events of a type in a month without showing the events. Whoever adds the proven numbers gets the sum over several months.
+
+## 17. Release only against a log entry
+
+Data lies encrypted. The key is shared among `n` key custodians, `k` of them suffice. A custodian only hands out its share if the request appears in the log of a checkpoint confirmed by witnesses. Whoever decrypted has therefore left an entry.
+
+Sharing: Shamir over GF(2^8) with the polynomial `x^8 + x^4 + x^3 + x + 1`. A share is `x (1 to 255) || y bytes`. Request: an event of type `ZugriffAngefragt` with the fields `objectId` and `empfaengerSchluessel` (public X25519 key, 32 bytes, Base64). The custodian checks the checkpoint against its pinned keys (log, witnesses, threshold), the inclusion and the type of the event. It answers with the receipt and the share, encrypted to the recipient: X25519 with an ephemeral key, `HKDF-SHA-256( secret, salt = raw bytes of the request hash, info = "defconder-freigabe-1", 32 bytes )`, AES-256-GCM with the raw bytes of the request hash as additional data.
+
+```
+Quittung = { schema: "defconder-freigabequittung-1", hueter, anfrageHash, seq, objektId, nutzerId | null, groesse, wurzel, at, anteil, signatur }
+```
+
+`signatur` is the Ed25519 signature of the custodian (type `0x01`) over `canonical( receipt without signatur )`, hex. `groesse` and `wurzel` name the checkpoint the custodian saw.
+
+### 17.1 Release proof `defconder-freigabe-1`
+
+```
+{ schema, notiz, logSchluessel?, anfrage: { event | auszug, pfad }, objektId, nutzerId?, hueter?, schwelle?, quittungen: [ Quittung ], konsistenz?: { "<from>-<to>": { pfad } } }
+```
+
+The verifier demands: a valid checkpoint, the request lies at `seq` in the checkpoint and names `objectId` equal to `objektId`, at least `schwelle` receipts of different pinned custodians with a valid signature that name exactly this request (hash, `seq`, object, user) and a state `groesse` above `seq` and at most the size of the checkpoint. If `groesse` is smaller it demands the consistency proof from `groesse` to the size of the checkpoint with the root of the receipt as the old root.
+
+### 17.2 Release report `defconder-freigabebericht-1`
+
+On request a custodian signs a statement `{ schema: "defconder-freigabeauskunft-1", hueter, objektId, quittungen: [ { anfrageHash, at } ], bis, anzahlGesamt, signatur }` with the same rules for `signatur`.
+
+```
+{ schema, objektId, schwelle, auskuenfte: [ statement ], weitereQuittungen?: [ Quittung ], aussage?: statement about the log }
+```
+
+With `n` pinned custodians and threshold `k` the verifier demands at least `n - k + 1` valid statements. If none lists a receipt, at most `k - 1` custodians can have issued one, and a key could not have been released. A receipt in `weitereQuittungen` that a statement of the same custodian omits makes the report invalid. If `aussage` is attached (section 8), every named request must be among the log's events for `objectId`.
+
+Limits: The custodians must work independently of each other. Whoever brings `k` custodians to their side decrypts without an entry. An entry only appears in the next confirmed checkpoint, which costs time. Whoever has the plaintext can copy it.
+
+## 18. Proof renewal `defconder-erneuerung-1`
+
+Keeps the evidential value of a checkpoint beyond the break of a scheme. Whoever forges a signature after Ed25519 is broken cannot date it before the quantum age if the checkpoint stood in a time proof under another scheme before.
+
+```
+{ schema, notiz, logSchluessel?, glieder: [ Glied ] }
+Glied = { schema: "defconder-erneuerungsglied-1", vorher, zeit, verfahren, schluessel, signatur, zeitbeweis?: { ots, koepfe } }
+```
+
+`vorher` is `hex( SHA-256( text of the checkpoint ) )` for the first link and otherwise `hex( SHA-256( canonical( previous link without zeitbeweis ) ) )`. `signatur` is the signature of the key (hash-based with the context string `defconder-erneuerung-1`, or Ed25519) over `canonical( link without signatur and zeitbeweis )`, hex. The time proof stamps `SHA-256( canonical( link without zeitbeweis ) )`, that is, the file with exactly that text. The times rise, and every stated time is not after the confirmed moment.
+
+With the assumption `scheme = date` the verifier demands for every scheme assumed broken a link of another kind whose confirmed moment lies before the date and which, by the assumption, was itself not yet broken at that moment.
+
+## 19. Release of the verifier `defconder-pruefer-release-1`
+
+```
+{ manifest: { schema, version, htmlSha256, summenSha256, dateien }, signaturen: [ { verfahren, schluessel, signatur } ] }
+```
+
+`htmlSha256` is the SHA-256 of the file `pruefer.html`, `summenSha256` that of the list `SHA256SUMS` (hash and path of all files of the verifier). The page is built reproducibly, the build yields the same bytes for the same source. What is signed is `canonical( manifest )`, once with Ed25519 and once hash-based (context string `defconder-release-1`). Whoever pins keys demands a valid signature from every pinned key.

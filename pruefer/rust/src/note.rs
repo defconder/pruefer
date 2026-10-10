@@ -1,16 +1,19 @@
 use crate::merkle::sha256;
+use crate::slhdsa;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 
 pub const TYP_ED25519: u8 = 1;
 pub const TYP_KOSIGNATUR: u8 = 4;
+pub const TYP_SLH: u8 = 0xff;
 const GEDANKENSTRICH_UND_LEERZEICHEN: &str = "\u{2014} ";
 
 #[derive(Clone)]
 pub struct Schluessel {
     pub name: String,
     pub typ: u8,
-    pub oeffentlich: [u8; 32],
+    pub oeffentlich: Vec<u8>,
+    pub verfahren: Option<String>,
     pub kennung: String,
 }
 
@@ -66,15 +69,31 @@ pub fn schluessel_lesen(text: &str) -> Result<Schluessel, String> {
         return Err("Ungültiger Schlüsselname.".into());
     }
     let bytes = base64_streng(daten)?;
+    if !bytes.is_empty() && bytes[0] == TYP_SLH {
+        let ende = bytes[1..].iter().position(|b| *b == 0).map(|p| p + 1).ok_or("Die Kennung des Verfahrens ist nicht abgeschlossen.")?;
+        let verfahren = match &bytes[1..ende] {
+            b"defconder-slh-dsa-sha2-128s-1" => "sha2-128s",
+            b"defconder-slh-dsa-sha2-128f-1" => "sha2-128f",
+            _ => return Err("Unbekanntes hashbasiertes Verfahren.".into()),
+        };
+        let oeffentlich = bytes[ende + 1..].to_vec();
+        if Some(oeffentlich.len()) != slhdsa::oeffentlich_bytes(verfahren) {
+            return Err("Der öffentliche Schlüssel hat die falsche Länge.".into());
+        }
+        if schluessel_kennung(name, TYP_SLH, &bytes[1..]) != kennung_hex {
+            return Err("Die Kennung passt nicht zum Schlüssel.".into());
+        }
+        return Ok(Schluessel { name: name.to_string(), typ: TYP_SLH, oeffentlich, verfahren: Some(verfahren.to_string()), kennung: kennung_hex.to_string() });
+    }
     if bytes.len() != 33 || (bytes[0] != TYP_ED25519 && bytes[0] != TYP_KOSIGNATUR) {
-        return Err("Nur Ed25519-Schlüssel der Typen 1 und 4 werden unterstützt.".into());
+        return Err("Nur Ed25519-Schlüssel der Typen 1 und 4 und hashbasierte Schlüssel werden unterstützt.".into());
     }
     let typ = bytes[0];
-    let oeffentlich: [u8; 32] = bytes[1..].try_into().map_err(|_| "Länge".to_string())?;
+    let oeffentlich = bytes[1..].to_vec();
     if schluessel_kennung(name, typ, &oeffentlich) != kennung_hex {
         return Err("Die Kennung passt nicht zum Schlüssel.".into());
     }
-    Ok(Schluessel { name: name.to_string(), typ, oeffentlich, kennung: kennung_hex.to_string() })
+    Ok(Schluessel { name: name.to_string(), typ, oeffentlich, verfahren: None, kennung: kennung_hex.to_string() })
 }
 
 pub fn notiz_lesen(text: &str) -> Result<Notiz, String> {
@@ -127,8 +146,9 @@ pub fn pruefpunkt_lesen(koerper: &str) -> Result<Pruefpunkt, String> {
     Ok(Pruefpunkt { origin: zeilen[0].to_string(), groesse, wurzel: hex::encode(wurzel), erweiterungen: zeilen[3..].iter().map(|z| z.to_string()).collect() })
 }
 
-fn ed25519(oeffentlich: &[u8; 32], nachricht: &[u8], signatur: &[u8]) -> bool {
-    let Ok(schluessel) = VerifyingKey::from_bytes(oeffentlich) else { return false };
+fn ed25519(oeffentlich: &[u8], nachricht: &[u8], signatur: &[u8]) -> bool {
+    let Ok(feld_schluessel) = <[u8; 32]>::try_from(oeffentlich) else { return false };
+    let Ok(schluessel) = VerifyingKey::from_bytes(&feld_schluessel) else { return false };
     let Ok(feld) = <[u8; 64]>::try_from(signatur) else { return false };
     schluessel.verify(nachricht, &Signature::from_bytes(&feld)).is_ok()
 }
@@ -156,6 +176,13 @@ pub fn signaturen_pruefen(notiz: &Notiz, vertraute: &[Schluessel]) -> Signaturer
             } else {
                 fehlerhaft.push(s.name.clone());
             }
+        } else if schluessel.typ == TYP_SLH {
+            let verfahren = schluessel.verfahren.as_deref().unwrap_or("");
+            if slhdsa::pruefen(verfahren, &schluessel.oeffentlich, notiz.koerper.as_bytes(), &s.wert, slhdsa::KONTEXT) {
+                gueltig.push(s.name.clone());
+            } else {
+                fehlerhaft.push(s.name.clone());
+            }
         } else if schluessel.typ == TYP_KOSIGNATUR {
             if s.wert.len() != 72 {
                 fehlerhaft.push(s.name.clone());
@@ -178,16 +205,28 @@ pub struct Punktergebnis {
     pub bestanden: bool,
     pub groesse: u64,
     pub zeugen_gueltig: usize,
+    pub pq: Option<bool>,
 }
 
-pub fn pruefpunkt_pruefen(text: &str, log_schluessel: &str, zeugen: &[String], schwelle: usize) -> Punktergebnis {
-    let Ok(notiz) = notiz_lesen(text) else { return Punktergebnis { lesbar: false, bestanden: false, groesse: 0, zeugen_gueltig: 0 } };
-    let Ok(punkt) = pruefpunkt_lesen(&notiz.koerper) else { return Punktergebnis { lesbar: false, bestanden: false, groesse: 0, zeugen_gueltig: 0 } };
-    let Ok(log) = schluessel_lesen(log_schluessel) else { return Punktergebnis { lesbar: true, bestanden: false, groesse: punkt.groesse, zeugen_gueltig: 0 } };
+pub fn pruefpunkt_pruefen(text: &str, log_schluessel: &str, zeugen: &[String], schwelle: usize, log_schluessel_pq: Option<&str>) -> Punktergebnis {
+    let Ok(notiz) = notiz_lesen(text) else { return Punktergebnis { lesbar: false, bestanden: false, groesse: 0, zeugen_gueltig: 0, pq: None } };
+    let Ok(punkt) = pruefpunkt_lesen(&notiz.koerper) else { return Punktergebnis { lesbar: false, bestanden: false, groesse: 0, zeugen_gueltig: 0, pq: None } };
+    let Ok(log) = schluessel_lesen(log_schluessel) else { return Punktergebnis { lesbar: true, bestanden: false, groesse: punkt.groesse, zeugen_gueltig: 0, pq: None } };
     let log_sig = signaturen_pruefen(&notiz, &[log.clone()]);
     let log_ok = log.typ == TYP_ED25519 && log.name == punkt.origin && log_sig.gueltig.len() == 1 && log_sig.fehlerhaft.is_empty();
     let zeugen_schluessel: Vec<Schluessel> = zeugen.iter().filter_map(|t| schluessel_lesen(t).ok()).filter(|z| z.typ == TYP_KOSIGNATUR).collect();
     let zeugen_sig = signaturen_pruefen(&notiz, &zeugen_schluessel);
     let zeugen_ok = zeugen_sig.gueltig.len() >= schwelle && schwelle > 0 && zeugen_sig.fehlerhaft.is_empty();
-    Punktergebnis { lesbar: true, bestanden: log_ok && zeugen_ok, groesse: punkt.groesse, zeugen_gueltig: zeugen_sig.gueltig.len() }
+    let pq = match (log_ok, log_schluessel_pq) {
+        (true, Some(pq_text)) => Some(match schluessel_lesen(pq_text) {
+            Ok(pq_schluessel) => {
+                let sig = signaturen_pruefen(&notiz, &[pq_schluessel.clone()]);
+                pq_schluessel.typ == TYP_SLH && pq_schluessel.name == punkt.origin && sig.gueltig.len() == 1 && sig.fehlerhaft.is_empty()
+            }
+            Err(_) => false,
+        }),
+        _ => None,
+    };
+    let bestanden = log_ok && zeugen_ok && pq != Some(false);
+    Punktergebnis { lesbar: true, bestanden, groesse: punkt.groesse, zeugen_gueltig: zeugen_sig.gueltig.len(), pq }
 }

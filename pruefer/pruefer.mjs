@@ -3,6 +3,11 @@ import { verifyPackage, verifyConsistency, pruefpunktPruefen } from "./pruefer-k
 import { aussagePruefen } from "./aussage.js";
 import { entscheidungPruefen } from "./entscheidung.js";
 import { widerspruchPruefen } from "./widerspruch.js";
+import { zeitbeweisPruefen } from "./zeitbeweis.js";
+import { stichprobePruefen } from "./stichprobe.js";
+import { freigabePruefen, freigabeberichtPruefen } from "./freigabe.js";
+import { erneuerungPruefen } from "./erneuerung.js";
+import { releasePruefen } from "./release-pruefen.js";
 import { berichtErzeugen, berichtText } from "./bericht.js";
 import { notizLesen, pruefpunktLesen, schluesselLesen, signaturenPruefen } from "./note.js";
 
@@ -11,6 +16,12 @@ const HILFE = `Aufruf:
   node pruefer.mjs aussage <aussage.json> [Optionen]
   node pruefer.mjs entscheidung <nachweis.json> [Optionen]
   node pruefer.mjs widerspruch <beweis.json> [--log-schluessel <Schluessel>]
+  node pruefer.mjs zeitbeweis <zeitbeweis.json> [Optionen]
+  node pruefer.mjs stichprobe <stichprobe.json> [Optionen]
+  node pruefer.mjs freigabe <freigabe.json> [Optionen]
+  node pruefer.mjs erneuerung <erneuerung.json> [Optionen]
+  node pruefer.mjs release <MANIFEST.json> --release-schluessel <Schluessel> [--release-schluessel <Schluessel>] [--datei pruefer.html] [--summen SHA256SUMS]
+  node pruefer.mjs freigabebericht <bericht.json> [Optionen]
   node pruefer.mjs pruefpunkt <pruefpunkt.txt> --log-schluessel <Schluessel> [--zeuge <Schluessel>]... [--schwelle N]
   node pruefer.mjs konsistenz <alt.txt> <neu.txt> <beweis.json> --log-schluessel <Schluessel>
 
@@ -19,11 +30,25 @@ Die Dokumentart wird an der Angabe schema erkannt, der Befehl kann auch weggelas
 Optionen:
   --vertraue-schluessel <Kennung>   Kennung des Schlüssels, dem das Paket gehören muss (mehrfach möglich)
   --log-schluessel <Schluessel>     Schlüssel des Protokolls, Form Name+Kennung+Daten
+  --log-schluessel-pq <Schluessel>  hashbasierter (quantensicherer) Schlüssel des Protokolls, der zusätzlich gültig unterschrieben haben muss
   --zeuge <Schluessel>              Schlüssel eines unabhängigen Zeugen (mehrfach möglich)
   --zeugen-datei <Datei>            Datei mit einem Zeugenschlüssel je Zeile
   --schwelle N                      Zahl der Gegenzeichnungen, die mindestens gültig sein müssen
   --wechsel <Datei>                 signierte Schlüsselwechsel des Betreibers (Datei mit einer Aussage oder einer Liste)
   --mindestarbeit N                 Mindestarbeit eines Zeitankers in Bit (Voreinstellung 64)
+  --release-schluessel <Schluessel> Schlüssel der Veröffentlichung des Prüfers (mehrfach möglich, alle müssen unterschrieben haben)
+  --datei <Datei>                   Datei, deren Prüfsumme mit der unterschriebenen verglichen wird
+  --summen <Datei>                  Liste SHA256SUMS, deren Prüfsumme mit der unterschriebenen verglichen wird
+  --erneuerungs-schluessel <Schluessel>  Schlüssel, mit dem Erneuerungsglieder unterschrieben sein dürfen (mehrfach möglich)
+  --bruch <Verfahren>=<Datum>       nimmt an, dass das Verfahren (ed25519, slh-dsa-sha2-128s) ab dem Datum gebrochen ist, zum Beispiel ed25519=2035-01-01
+  --hueter <Schluessel>             Schlüssel eines Schlüsselhüters (mehrfach möglich)
+  --hueter-datei <Datei>            Datei mit einem Hüterschlüssel je Zeile
+  --hueter-schwelle N               Zahl der Hüter, die zusammen einen Schlüssel freigeben können
+  --aussage-verlangen               verlangt beim Freigabebericht die Aussage über das Protokoll
+  --objekt <Kennung>                verlangt, dass der Freigabenachweis genau dieses Objekt betrifft
+  --nutzer <Kennung>                verlangt, dass die Anfrage von genau diesem Nutzer stammt
+  --mindestanzahl N                 verlangt bei einer Stichprobe mindestens N Ziehungen
+  --mindestabstand N                verlangt bei einer Stichprobe mindestens N Blöcke zwischen Bestätigung und Zufall
   --mindeststufe N                  verlangt mindestens Vertrauensstufe N (0, 1 oder 2), sonst gilt die Prüfung als nicht bestanden
   --bericht                         zusätzlich einen Bericht in Klartext ausgeben`;
 
@@ -34,11 +59,33 @@ function optionen(argumente) {
     const a = argumente[i];
     if (a === "--vertraue-schluessel") opts.pinnedKeyIds.push(argumente[(i += 1)]);
     else if (a === "--log-schluessel") opts.logSchluessel = argumente[(i += 1)];
+    else if (a === "--log-schluessel-pq") opts.logSchluesselPq = argumente[(i += 1)];
     else if (a === "--zeuge") opts.zeugen.push(argumente[(i += 1)]);
     else if (a === "--zeugen-datei") opts.zeugen.push(...readFileSync(argumente[(i += 1)], "utf8").split(/\r?\n/).map((z) => z.trim()).filter((z) => z && !z.startsWith("#")));
     else if (a === "--schwelle") opts.schwelle = Number(argumente[(i += 1)]);
     else if (a === "--mindestarbeit") opts.mindestArbeitBits = Number(argumente[(i += 1)]);
     else if (a === "--mindeststufe") opts.mindestStufe = Number(argumente[(i += 1)]);
+    else if (a === "--release-schluessel") (opts.releaseSchluessel ??= []).push(argumente[(i += 1)]);
+    else if (a === "--datei") opts.datei = argumente[(i += 1)];
+    else if (a === "--summen") opts.summen = argumente[(i += 1)];
+    else if (a === "--erneuerungs-schluessel") (opts.erneuerungsSchluessel ??= []).push(argumente[(i += 1)]);
+    else if (a === "--bruch") {
+      const [verfahren, datum] = String(argumente[(i += 1)]).split("=");
+      const zeit = Date.parse(`${datum}T00:00:00Z`);
+      if (!verfahren || Number.isNaN(zeit)) {
+        console.log("Die Option --bruch erwartet Verfahren=JJJJ-MM-TT.");
+        process.exit(2);
+      }
+      (opts.bruchAnnahme ??= {})[verfahren] = zeit;
+    }
+    else if (a === "--hueter") (opts.hueter ??= []).push(argumente[(i += 1)]);
+    else if (a === "--hueter-datei") (opts.hueter ??= []).push(...readFileSync(argumente[(i += 1)], "utf8").split(/\r?\n/).map((z) => z.trim()).filter((z) => z && !z.startsWith("#")));
+    else if (a === "--hueter-schwelle") opts.hueterSchwelle = Number(argumente[(i += 1)]);
+    else if (a === "--aussage-verlangen") opts.aussageVerlangen = true;
+    else if (a === "--objekt") opts.erwartetesObjekt = argumente[(i += 1)];
+    else if (a === "--nutzer") opts.erwarteterNutzer = argumente[(i += 1)];
+    else if (a === "--mindestanzahl") opts.mindestAnzahl = Number(argumente[(i += 1)]);
+    else if (a === "--mindestabstand") opts.mindestAbstand = Number(argumente[(i += 1)]);
     else if (a === "--wechsel") opts.wechsel = JSON.parse(readFileSync(argumente[(i += 1)], "utf8"));
     else if (a === "--bericht") opts.bericht = true;
     else if (a.startsWith("--")) {
@@ -104,6 +151,11 @@ async function dokumentBefehl(positional, opts, erwartet = null) {
     return 2;
   }
   const doc = JSON.parse(readFileSync(pfad, "utf8"));
+  if (doc?.manifest?.schema === "defconder-pruefer-release-1") {
+    const r = await releasePruefen(doc, { schluessel: opts.releaseSchluessel, dateiBytes: opts.datei ? new Uint8Array(readFileSync(opts.datei)) : null, summenBytes: opts.summen ? new Uint8Array(readFileSync(opts.summen)) : null });
+    const code = ausgeben(r, null, opts, `Alle Prüfungen bestanden. Version ${r.version}.`, "Mindestens eine Prüfung ist fehlgeschlagen. Dieser Veröffentlichung ist nicht zu trauen.");
+    return code;
+  }
   const schema = doc?.schema;
   if (erwartet && schema !== erwartet) {
     console.log(`Das Dokument hat nicht das erwartete Format ${erwartet}.`);
@@ -111,6 +163,14 @@ async function dokumentBefehl(positional, opts, erwartet = null) {
   }
   if (schema === "defconder-aussage-1") return ausgeben(await aussagePruefen(doc, opts), "aussage", opts, "Alle Prüfungen bestanden.", "Mindestens eine Prüfung ist fehlgeschlagen. Der Aussage ist nicht zu trauen.");
   if (schema === "defconder-entscheidung-1") return ausgeben(await entscheidungPruefen(doc, opts), "entscheidung", opts, "Alle Prüfungen bestanden.", "Mindestens eine Prüfung ist fehlgeschlagen. Dem Nachweis ist nicht zu trauen.");
+  if (schema === "defconder-erneuerung-1") return ausgeben(await erneuerungPruefen(doc, opts), "erneuerung", opts, "Alle Prüfungen bestanden.", "Mindestens eine Prüfung ist fehlgeschlagen. Der Erneuerung ist nicht zu trauen.");
+  if (schema === "defconder-freigabe-1") return ausgeben(await freigabePruefen(doc, opts), "freigabe", opts, "Alle Prüfungen bestanden.", "Mindestens eine Prüfung ist fehlgeschlagen. Dem Freigabenachweis ist nicht zu trauen.");
+  if (schema === "defconder-freigabebericht-1") return ausgeben(await freigabeberichtPruefen(doc, opts), "freigabebericht", opts, "Alle Prüfungen bestanden.", "Mindestens eine Prüfung ist fehlgeschlagen. Dem Bericht ist nicht zu trauen.");
+  if (schema === "defconder-stichprobe-1") return ausgeben(await stichprobePruefen(doc, opts), "stichprobe", opts, "Alle Prüfungen bestanden.", "Mindestens eine Prüfung ist fehlgeschlagen. Der Stichprobe ist nicht zu trauen.");
+  if (schema === "defconder-zeitbeweis-1") {
+    const r = await zeitbeweisPruefen(doc, opts);
+    return ausgeben(r, "zeitbeweis", opts, "Alle Prüfungen bestanden.", "Mindestens eine Prüfung ist fehlgeschlagen. Dem Zeitbeweis ist nicht zu trauen.");
+  }
   if (schema === "defconder-widerspruch-1") {
     const r = await widerspruchPruefen(doc, opts);
     for (const c of r.checks) zeile(c.ok, c.label, c.detail);
@@ -130,10 +190,10 @@ if (!ersteres) {
   console.log(HILFE);
   process.exit(2);
 }
-const befehle = new Set(["paket", "aussage", "entscheidung", "widerspruch", "pruefpunkt", "konsistenz"]);
+const befehle = new Set(["paket", "aussage", "entscheidung", "widerspruch", "zeitbeweis", "stichprobe", "freigabe", "freigabebericht", "erneuerung", "release", "pruefpunkt", "konsistenz"]);
 const befehl = befehle.has(ersteres) ? ersteres : "paket";
 const { positional, opts } = optionen(befehle.has(ersteres) ? rest : [ersteres, ...rest]);
-const erwartetesSchema = { aussage: "defconder-aussage-1", entscheidung: "defconder-entscheidung-1", widerspruch: "defconder-widerspruch-1" }[befehl] ?? null;
+const erwartetesSchema = { aussage: "defconder-aussage-1", entscheidung: "defconder-entscheidung-1", widerspruch: "defconder-widerspruch-1", zeitbeweis: "defconder-zeitbeweis-1", stichprobe: "defconder-stichprobe-1", freigabe: "defconder-freigabe-1", freigabebericht: "defconder-freigabebericht-1", erneuerung: "defconder-erneuerung-1" }[befehl] ?? null;
 try {
   const code = befehl === "pruefpunkt" ? await pruefpunktBefehl(positional, opts) : befehl === "konsistenz" ? await konsistenzBefehl(positional, opts) : await dokumentBefehl(positional, opts, erwartetesSchema);
   process.exit(code);

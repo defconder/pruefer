@@ -6,9 +6,13 @@ import struct
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
+import slhdsa
+
 GEDANKENSTRICH = "\u2014"
 TYP_ED25519 = 0x01
 TYP_KOSIGNATUR = 0x04
+TYP_SLH = 0xff
+SLH_KENNUNGEN = {b"defconder-slh-dsa-sha2-128s-1": "sha2-128s", b"defconder-slh-dsa-sha2-128f-1": "sha2-128f"}
 MAX_BAUMGROESSE = 2**31 - 1
 
 
@@ -107,8 +111,21 @@ def schluessel_lesen(text):
     if any(z.isspace() for z in name):
         raise ValueError("Ungültiger Schlüsselname.")
     bytes_ = base64_streng(daten)
+    if len(bytes_) > 0 and bytes_[0] == TYP_SLH:
+        ende = bytes_.find(b"\x00", 1)
+        if ende < 0:
+            raise ValueError("Die Kennung des Verfahrens ist nicht abgeschlossen.")
+        verfahren = SLH_KENNUNGEN.get(bytes_[1:ende])
+        if verfahren is None:
+            raise ValueError("Unbekanntes hashbasiertes Verfahren.")
+        oeffentlich = bytes_[ende + 1:]
+        if len(oeffentlich) != slhdsa.groessen(verfahren)["oeffentlich"]:
+            raise ValueError("Der öffentliche Schlüssel hat die falsche Länge.")
+        if schluessel_kennung(name, TYP_SLH, bytes_[1:]).hex() != kennung_hex:
+            raise ValueError("Die Kennung passt nicht zum Schlüssel.")
+        return {"name": name, "typ": TYP_SLH, "oeffentlich": oeffentlich, "verfahren": verfahren, "kennung": kennung_hex}
     if len(bytes_) != 33 or bytes_[0] not in (TYP_ED25519, TYP_KOSIGNATUR):
-        raise ValueError("Nur Ed25519-Schlüssel der Typen 1 und 4 werden unterstützt.")
+        raise ValueError("Nur Ed25519-Schlüssel der Typen 1 und 4 und hashbasierte Schlüssel werden unterstützt.")
     typ, oeffentlich = bytes_[0], bytes_[1:]
     if schluessel_kennung(name, typ, oeffentlich).hex() != kennung_hex:
         raise ValueError("Die Kennung passt nicht zum Schlüssel.")
@@ -181,6 +198,9 @@ def signaturen_pruefen(notiz, vertraute):
         if schluessel["typ"] == TYP_ED25519:
             ok = len(s["wert"]) == 64 and _ed25519(schluessel["oeffentlich"], notiz["koerper"].encode("utf-8"), s["wert"])
             (gueltig if ok else fehlerhaft).append(s["name"])
+        elif schluessel["typ"] == TYP_SLH:
+            ok = slhdsa.pruefen(schluessel["verfahren"], schluessel["oeffentlich"], notiz["koerper"].encode("utf-8"), s["wert"])
+            (gueltig if ok else fehlerhaft).append(s["name"])
         elif schluessel["typ"] == TYP_KOSIGNATUR:
             if len(s["wert"]) != 72:
                 fehlerhaft.append(s["name"])
@@ -192,7 +212,7 @@ def signaturen_pruefen(notiz, vertraute):
     return {"gueltig": gueltig, "fehlerhaft": fehlerhaft}
 
 
-def pruefpunkt_pruefen(text, log_schluessel, zeugen, schwelle):
+def pruefpunkt_pruefen(text, log_schluessel, zeugen, schwelle, log_schluessel_pq=None):
     try:
         notiz = notiz_lesen(text)
         punkt = pruefpunkt_lesen(notiz["koerper"])
@@ -204,7 +224,16 @@ def pruefpunkt_pruefen(text, log_schluessel, zeugen, schwelle):
     zeugen_schluessel = [z for z in (schluessel_lesen(t) for t in zeugen) if z["typ"] == TYP_KOSIGNATUR]
     zeugen_sig = signaturen_pruefen(notiz, zeugen_schluessel)
     zeugen_ok = len(zeugen_sig["gueltig"]) >= schwelle > 0 and not zeugen_sig["fehlerhaft"]
-    return {"lesbar": True, "bestanden": log_ok and zeugen_ok, "log_gueltig": log_ok, "punkt": punkt, "zeugen_gueltig": len(zeugen_sig["gueltig"])}
+    pq = None
+    if log_ok and log_schluessel_pq is not None:
+        try:
+            pq_schluessel = schluessel_lesen(log_schluessel_pq)
+            pq_sig = signaturen_pruefen(notiz, [pq_schluessel])
+            pq = pq_schluessel["typ"] == TYP_SLH and pq_schluessel["name"] == punkt["origin"] and len(pq_sig["gueltig"]) == 1 and not pq_sig["fehlerhaft"]
+        except ValueError:
+            pq = False
+    bestanden = log_ok and zeugen_ok and (pq is not False)
+    return {"lesbar": True, "bestanden": bestanden, "log_gueltig": log_ok, "punkt": punkt, "zeugen_gueltig": len(zeugen_sig["gueltig"]), "pq": pq}
 
 
 def einschluss_pruefen(index, groesse, blatt, pfad, wurzel_hex):
