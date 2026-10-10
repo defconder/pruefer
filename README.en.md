@@ -83,6 +83,10 @@ flowchart LR
 
 **Time anchor.** Optionally a checkpoint carries the header of the latest Bitcoin block, and the verifier checks its proof of work. That shows the checkpoint was not made earlier, not that it was not made later.
 
+## Related work
+
+The building blocks come from the transparency community: Certificate Transparency and RFC 9162, Go sumdb, Sigstore, Sigsum, the [C2SP](https://c2sp.org) formats and the [transparency.dev](https://transparency.dev) witness network. For the index and the proof of absence the closest related work is the verifiable index (vindex) in the transparency-dev incubator, which uses a prefix trie based on AKD, plus the key transparency literature (CONIKS, AKD). We use a plain sorted tree, which is easier to implement and verify and costs more to update. Where we differ from these works or overlooked something, we are grateful for pointers.
+
 ## Quick start
 
 Requires Node 20 or later. No installation, no dependencies:

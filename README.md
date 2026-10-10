@@ -89,6 +89,10 @@ flowchart LR
 
 **Zeitanker.** Optional trägt ein Prüfpunkt den Kopf des neuesten Bitcoin-Blocks. Der Prüfer rechnet dessen Arbeitsnachweis nach. Das belegt, dass der Prüfpunkt nicht früher entstand, aber nicht, dass er nicht später entstand.
 
+## Verwandte Arbeiten
+
+Die Bausteine kommen aus der Transparenz-Szene: Certificate Transparency und RFC 9162, Go sumdb, Sigstore, Sigsum, die Formate von [C2SP](https://c2sp.org) und das Zeugennetz von [transparency.dev](https://transparency.dev). Für den Index und den Beweis des Fehlens ist die engste verwandte Arbeit der verifizierbare Index (vindex) im Incubator von transparency-dev, der einen Präfixbaum auf Basis von AKD verwendet, dazu die Literatur zu Schlüsseltransparenz (CONIKS, AKD). Wir benutzen einen einfachen, sortierten Baum, der sich leichter umsetzen und prüfen lässt und beim Aktualisieren mehr kostet. Wo wir von diesen Arbeiten abweichen oder etwas übersehen haben, sind wir für Hinweise dankbar.
+
 ## Schnellstart
 
 Voraussetzung ist Node ab Version 20. Ohne Installation, ohne Abhängigkeiten:
