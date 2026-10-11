@@ -1,0 +1,4 @@
+beispiel.defconder.de/protokoll
+8
+xAEUyGTk5duvY3+atyvrIDsl+dxb7HJ8If7K/e073YI=
+defconder-zeitanker-1 bitcoin 00c02631e4ad05930a3ff8c85ee257bc52b4bd3198f5f92865130000000000000000000032b4b98a947eb7c7c3cc819da66b81e9179267e98d1004752aa1225e9c67d4afb141cb6af01e0217ae3825bf
