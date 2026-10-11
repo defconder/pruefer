@@ -301,6 +301,12 @@ Bei `n` festgelegten Hütern und der Schwelle `k` verlangt der Prüfer mindesten
 
 Grenzen: Die Hüter müssen unabhängig voneinander arbeiten. Wer `k` Hüter auf seine Seite bringt, entschlüsselt ohne Eintrag. Ein Eintrag steht erst im nächsten bezeugten Prüfpunkt, das kostet Zeit. Wer den Klartext hat, kann ihn kopieren.
 
+### 17.3 Lieferung `defconder-lieferung-1` und Anteilsprüfsumme
+
+Ein Hüter unterschreibt zu jeder Hülle, die er herausgibt: `{ schema: "defconder-lieferung-1", hueter, anfrageHash, objektId, huelle, signatur }`. `huelle` ist SHA-256 über die kanonische JSON-Form der Hülle (`fluechtig`, `nonce`, `text`, `tag`). Die Prüfsumme eines Anteils ist SHA-256 über `defconder-anteil-1`, 0x00, die Objektkennung, 0x00 und die Bytes des Anteils (erstes Byte ist die Nummer). Wer das Geheimnis teilt, legt die Prüfsummen fest und hinterlegt sie beim Objekt.
+
+Ein Beleg gegen einen Hüter besteht aus Lieferung, Hülle, dem Hüllenschlüssel der einen Lieferung, Anfrage, Objekt, Nummer und der festgelegten Prüfsumme. Er gilt, wenn die Unterschrift stimmt, die Hülle zur Lieferung gehört, sich die Hülle mit dem Schlüssel öffnen lässt (die Prüfsumme der Verschlüsselung stimmt also) und der Anteil darin nicht zur festgelegten Prüfsumme passt. Eine Hülle, die sich nicht öffnen lässt, beweist nichts gegen den Hüter, weil der Empfänger einen falschen Schlüssel nennen könnte. Die Prüfsummen selbst muss der Prüfende vom Teilenden beziehen. Die Umsetzung steht in `hueter/empfang.mjs`, ein Prüfer für Lieferungen im Browser gibt es noch nicht.
+
 ## 18. Beweiserneuerung `defconder-erneuerung-1`
 
 Hält den Beweiswert eines Prüfpunkts über den Bruch eines Verfahrens hinaus. Wer nach dem Bruch von Ed25519 eine Signatur fälscht, kann sie nicht vor das Quantenzeitalter datieren, wenn der Prüfpunkt davor unter einem anderen Verfahren im Zeitbeweis stand.

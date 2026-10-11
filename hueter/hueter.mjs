@@ -6,6 +6,7 @@ import { verifyInclusion } from "../pruefer/merkle.js";
 import { pruefpunktPruefen, canonicalJson } from "../pruefer/pruefer-kern.js";
 import { ereignisLesen, QUITTUNG_SCHEMA, AUSKUNFT_SCHEMA } from "../pruefer/freigabe.js";
 import { anteilVerschluesseln } from "./umschlag.mjs";
+import { LIEFERUNG_SCHEMA, huellenHash } from "./empfang.mjs";
 
 const MAX_ANFRAGE = 400000;
 const STANDARD_TYPEN = ["ZugriffAngefragt"];
@@ -82,7 +83,8 @@ export async function starteHueter({ name, logSchluessel, zeugen, zeugenSchwelle
     } catch (err) {
       return [403, { fehler: `Der Empfängerschlüssel ist unbrauchbar: ${err.message}` }];
     }
-    return [200, { quittung, anteil: huelle }];
+    const lieferung = signieren({ schema: LIEFERUNG_SCHEMA, hueter: name, anfrageHash: e.hash, objektId: e.objectId, huelle: huellenHash(huelle) });
+    return [200, { quittung, anteil: huelle, lieferung }];
   }
 
   function auskunft(objektId) {

@@ -296,6 +296,12 @@ With `n` pinned custodians and threshold `k` the verifier demands at least `n - 
 
 Limits: The custodians must work independently of each other. Whoever brings `k` custodians to their side decrypts without an entry. An entry only appears in the next confirmed checkpoint, which costs time. Whoever has the plaintext can copy it.
 
+### 17.3 Delivery `defconder-lieferung-1` and share checksum
+
+A custodian signs for every envelope it hands out: `{ schema: "defconder-lieferung-1", hueter, anfrageHash, objektId, huelle, signatur }`. `huelle` is SHA-256 over the canonical JSON form of the envelope (`fluechtig`, `nonce`, `text`, `tag`). The checksum of a share is SHA-256 over `defconder-anteil-1`, 0x00, the object id, 0x00 and the bytes of the share (the first byte is its number). Whoever splits the secret fixes the checksums and stores them with the object.
+
+Evidence against a custodian consists of the delivery, the envelope, the envelope key of that one delivery, request, object, number and the fixed checksum. It holds if the signature is valid, the envelope belongs to the delivery, the envelope opens with the key (so the authentication tag of the encryption is valid) and the share inside does not match the fixed checksum. An envelope that does not open proves nothing against the custodian, because the recipient could name a wrong key. The checksums themselves must be obtained by the verifier from the party that split the secret. The implementation is in `hueter/empfang.mjs`; there is no verifier for deliveries in the browser yet.
+
 ## 18. Proof renewal `defconder-erneuerung-1`
 
 Keeps the evidential value of a checkpoint beyond the break of a scheme. Whoever forges a signature after Ed25519 is broken cannot date it before the quantum age if the checkpoint stood in a time proof under another scheme before.

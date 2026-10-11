@@ -43,11 +43,19 @@ export function anteilVerschluesseln(anteil, empfaengerRoh, anfrageHash) {
   return { fluechtig: fluechtig.publicKey.export({ type: "spki", format: "der" }).subarray(-32).toString("base64"), nonce: nonce.toString("base64"), text: text.toString("base64"), tag: chiffre.getAuthTag().toString("base64") };
 }
 
-export function anteilEntschluesseln(huelle, empfaengerPrivat, anfrageHash) {
+export function huellenSchluessel(huelle, empfaengerPrivat, anfrageHash) {
   const privat = typeof empfaengerPrivat === "string" ? createPrivateKey(empfaengerPrivat) : empfaengerPrivat;
   const gemeinsam = diffieHellman({ privateKey: privat, publicKey: oeffentlichAusRoh(huelle.fluechtig) });
-  const dechiffre = createDecipheriv("aes-256-gcm", schluesselAbleiten(gemeinsam, anfrageHash), Buffer.from(huelle.nonce, "base64"));
+  return schluesselAbleiten(gemeinsam, anfrageHash).toString("hex");
+}
+
+export function anteilMitSchluessel(huelle, schluesselHex, anfrageHash) {
+  const dechiffre = createDecipheriv("aes-256-gcm", Buffer.from(schluesselHex, "hex"), Buffer.from(huelle.nonce, "base64"));
   dechiffre.setAAD(Buffer.from(anfrageHash, "hex"));
   dechiffre.setAuthTag(Buffer.from(huelle.tag, "base64"));
   return new Uint8Array(Buffer.concat([dechiffre.update(Buffer.from(huelle.text, "base64")), dechiffre.final()]));
+}
+
+export function anteilEntschluesseln(huelle, empfaengerPrivat, anfrageHash) {
+  return anteilMitSchluessel(huelle, huellenSchluessel(huelle, empfaengerPrivat, anfrageHash), anfrageHash);
 }

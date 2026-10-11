@@ -22,6 +22,17 @@ node hueter.mjs --name custodian-1.example.org --log "defconder.example/log+1a2b
 
 On first start a key is created in `hueter.key`. The custodian passes on its public key through a channel the operator does not control. Receipts are stored in `quittungen.jsonl`. The files `shamir.mjs` and `umschlag.mjs` share the key and encrypt data and shares.
 
+## Sabotage by a custodian
+
+Plain Shamir does not prove who delivered a wrong share. A custodian that returns garbage after a valid log entry can disturb the release but steal nothing. Two layers in `empfang.mjs` deal with it:
+
+- **Checksums of the shares.** Whoever splits the secret fixes a checksum per share (`pruefsummenErzeugen`) and stores it with the object. The recipient compares every decrypted share with it (`anteileEmpfangen`). Wrong shares are sorted out, and the recipient rebuilds the key from the good ones as long as at least `k` are good.
+- **Signed delivery.** Every custodian signs with `defconder-lieferung-1` which envelope it delivered. If the share inside a signed envelope does not match the fixed checksum, anyone can recompute that from the evidence (`fehlverhaltenPruefen`). For that the recipient reveals the envelope key of this one delivery, nothing more.
+
+Without fixed checksums there is `schluesselFinden`: it tries subsets of the shares and checks whether the record opens. That finds a valid set if there is one, but names only suspects, no proof.
+
+Open points: if a custodian delivers an envelope that cannot be decrypted at all, only the recipient can claim that, a third party cannot check it. And if so many custodians sabotage that fewer than `k` good ones remain, the release fails; the culprits are named, but the data stays closed. That is the price of nobody being able to decrypt alone: the service puts confidentiality before availability. There is no verifiable secret sharing in the sense of Feldman or Pedersen yet.
+
 ## Limits
 
 - Whoever brings `k` custodians to their side decrypts without an entry. The custodians must be run independently of each other.

@@ -22,6 +22,17 @@ node hueter.mjs --name hueter-1.example.org --log "defconder.example/log+1a2b3c4
 
 Beim ersten Start entsteht ein Schlüssel in `hueter.key`. Der Hüter gibt den öffentlichen Schlüssel auf einem Weg weiter, den der Betreiber nicht kontrolliert. Quittungen stehen in `quittungen.jsonl`. Die Dateien `shamir.mjs` und `umschlag.mjs` teilen den Schlüssel und verschlüsseln Daten und Anteile.
 
+## Sabotage durch einen Hüter
+
+Shamir allein beweist nicht, wer einen falschen Anteil geliefert hat. Ein Hüter, der nach einem gültigen Protokolleintrag Müll liefert, kann die Freigabe stören, aber nichts stehlen. Dagegen gibt es zwei Schutzschichten in `empfang.mjs`:
+
+- **Prüfsummen der Anteile.** Wer das Geheimnis teilt, legt je Anteil eine Prüfsumme fest (`pruefsummenErzeugen`) und hinterlegt sie beim Objekt. Der Empfänger vergleicht jeden entschlüsselten Anteil damit (`anteileEmpfangen`). Falsche Anteile werden aussortiert, und der Empfänger setzt den Schlüssel aus den guten zusammen, solange mindestens `k` gute da sind.
+- **Unterschriebene Lieferung.** Jeder Hüter unterschreibt mit `defconder-lieferung-1`, welche Hülle er geliefert hat. Passt der Anteil in einer unterschriebenen Hülle nicht zur festgelegten Prüfsumme, kann jeder Dritte das mit dem Beleg nachrechnen (`fehlverhaltenPruefen`). Dazu gibt der Empfänger den Hüllenschlüssel dieser einen Lieferung preis, mehr nicht.
+
+Ohne festgelegte Prüfsummen bleibt `schluesselFinden`: Es probiert Teilmengen der Anteile und prüft jeweils, ob sich der Datensatz öffnen lässt. Das findet ein gültiges Paar, wenn es eines gibt, nennt aber nur Verdächtige, keinen Beweis.
+
+Offene Stellen: Liefert ein Hüter eine Hülle, die sich gar nicht entschlüsseln lässt, kann nur der Empfänger das behaupten, ein Dritter kann es nicht nachprüfen. Und sabotieren so viele Hüter, dass weniger als `k` gute bleiben, scheitert die Freigabe, die Schuldigen sind dann zwar benannt, aber die Daten bleiben zu. Das ist der Preis dafür, dass kein Einzelner allein entschlüsseln kann: Der Dienst stellt Vertraulichkeit vor Verfügbarkeit. Ein überprüfbares Teilen im Sinne von Feldman oder Pedersen gibt es bisher nicht.
+
 ## Grenzen
 
 - Wer `k` Hüter auf seine Seite bringt, entschlüsselt ohne Eintrag. Die Hüter müssen unabhängig voneinander betrieben werden.
